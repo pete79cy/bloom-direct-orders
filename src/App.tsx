@@ -7,6 +7,7 @@ import OrdersList from './pages/OrdersList';
 import OrderDetail from './pages/OrderDetail';
 import Calendar from './pages/Calendar';
 import NewOrderWizard from './pages/NewOrderWizard';
+import RequireAuth from './components/RequireAuth';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -20,11 +21,11 @@ export default function App() {
       <BrowserRouter>
         <Routes>
           <Route path="/login" element={<Login />} />
-          <Route path="/" element={<Home />} />
-          <Route path="/orders" element={<OrdersList />} />
-          <Route path="/orders/new" element={<NewOrderWizard />} />
-          <Route path="/orders/:id" element={<OrderDetail />} />
-          <Route path="/calendar" element={<Calendar />} />
+          <Route path="/" element={<RequireAuth><Home /></RequireAuth>} />
+          <Route path="/orders" element={<RequireAuth><OrdersList /></RequireAuth>} />
+          <Route path="/orders/new" element={<RequireAuth><NewOrderWizard /></RequireAuth>} />
+          <Route path="/orders/:id" element={<RequireAuth><OrderDetail /></RequireAuth>} />
+          <Route path="/calendar" element={<RequireAuth><Calendar /></RequireAuth>} />
         </Routes>
       </BrowserRouter>
       <Toaster position="top-center" richColors />
