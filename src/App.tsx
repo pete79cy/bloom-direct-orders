@@ -8,6 +8,7 @@ import OrderDetail from './pages/OrderDetail';
 import Calendar from './pages/Calendar';
 import NewOrderWizard from './pages/NewOrderWizard';
 import RequireAuth from './components/RequireAuth';
+import PwaUpdateToast from './components/PwaUpdateToast';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -28,6 +29,7 @@ export default function App() {
           <Route path="/calendar" element={<RequireAuth><Calendar /></RequireAuth>} />
         </Routes>
       </BrowserRouter>
+      <PwaUpdateToast />
       <Toaster position="top-center" richColors />
     </QueryClientProvider>
   );
