@@ -22,3 +22,71 @@
   .pt-safe { padding-top: env(safe-area-inset-top); }
   .pb-safe { padding-bottom: env(safe-area-inset-bottom); }
 }
+
+/* ──────────────────────────────────────────────────────────────────
+   iOS-style mobile shell tokens + primitives
+   Ported from bloom-crm/src/index.css to support MobileSheet,
+   MobileSearchInput, and MobileStepper.
+   ────────────────────────────────────────────────────────────────── */
+@layer base {
+  :root {
+    /* iOS system grays (light mode) */
+    --ios-bg-grouped: #F2F2F7;
+    --ios-bg-card: #FFFFFF;
+    --ios-bg-elev: #FFFFFF;
+    --ios-ink: #000000;
+    --ios-ink-sec: rgba(60,60,67,0.60);
+    --ios-ink-ter: rgba(60,60,67,0.30);
+    --ios-ink-quad: rgba(60,60,67,0.18);
+    --ios-separator: rgba(60,60,67,0.12);
+    --ios-fill-1: rgba(120,120,128,0.20);
+    --ios-fill-2: rgba(120,120,128,0.16);
+    --ios-fill-3: rgba(120,120,128,0.12);
+    --ios-fill-4: rgba(120,120,128,0.08);
+    /* Brand — nursery green */
+    --ios-brand: oklch(0.42 0.12 152);
+
+    /* Easing tokens */
+    --ease-out-strong: cubic-bezier(0.23, 1, 0.32, 1);
+    --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+  }
+}
+
+@layer components {
+  .ios-shell {
+    background: var(--ios-bg-grouped);
+    color: var(--ios-ink);
+    -webkit-font-smoothing: antialiased;
+    min-height: 100vh;
+  }
+
+  /* Haptic tap scale. */
+  .ios-tap {
+    transition: transform 160ms var(--ease-out-strong), opacity 160ms var(--ease-out-strong);
+  }
+  .ios-tap:active { transform: scale(0.97); opacity: 0.85; }
+
+  /* MobileSheet — data-state-driven CSS transitions. */
+  .ios-sheet {
+    transform: translateY(100%);
+    transition: transform 320ms var(--ease-drawer);
+    will-change: transform;
+  }
+  .ios-sheet[data-state="open"] {
+    transform: translateY(0);
+  }
+
+  .ios-sheet-backdrop {
+    opacity: 0;
+    transition: opacity 200ms ease-out;
+  }
+  .ios-sheet-backdrop[data-state="open"] {
+    opacity: 1;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .ios-tap:active { transform: none; }
+    .ios-sheet { transition-duration: 0ms; transform: translateY(0) !important; }
+    .ios-sheet-backdrop { transition-duration: 120ms; }
+  }
+}
