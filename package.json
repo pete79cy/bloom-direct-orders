@@ -6,8 +6,11 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "vitest",
+    "test:run": "vitest run",
+    "e2e": "playwright test",
+    "lint": "tsc --noEmit"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.100.11",
