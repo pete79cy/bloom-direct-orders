@@ -12,9 +12,8 @@ export interface Order {
   order_number: string;
   customer_id: string;
   status: OrderStatus;
-  issue_date: string;          // ISO date
   delivery_date: string | null;
-  reference: string | null;
+  delivery_address_id: string | null;
   notes: string | null;
   source_quote_id: string | null;
   created_at: string;
@@ -24,11 +23,13 @@ export interface Order {
 export interface OrderLine {
   id: string;
   order_id: string;
+  line_no: number;
   variant_id: string;
+  description: string | null;
   qty: number;
-  unit_sell_price: number;
-  notes: string | null;
-  sort_order: number;
+  unit_price: number;
+  discount_pct: number | null;
+  vat_rate: number | null;
 }
 
 export interface Customer {
@@ -54,10 +55,17 @@ export interface Variant {
   default_sell_price: number | null;
 }
 
-// Rich response from GET /api/orders/:id (confirmed by backend audit).
+// Joined/enriched line as returned by GET /api/orders/:id
+export interface OrderLineEnriched extends OrderLine {
+  plant_common_name: string | null;
+  plant_scientific_name: string | null;
+  size_summary: string | null;
+}
+
+// Rich response from GET /api/orders/:id
 export interface OrderDetail {
   order: Order;
-  lines: (OrderLine & { description?: string; size_summary?: string; plant_common_name?: string; plant_scientific_name?: string })[];
+  lines: OrderLineEnriched[];
   customer: Customer | null;
   sourceQuote: { id: string; quote_number: string } | null;
   deliveryNotes: unknown[];
@@ -66,7 +74,7 @@ export interface OrderDetail {
   proformaInvoices: unknown[];
 }
 
-// Customer-specific price row from GET /api/customer-prices?customer_id=X
+// Row returned by GET /api/customer-prices?customer_id=X
 export interface CustomerPrice {
   variant_id: string;
   effective_unit_price: number;
