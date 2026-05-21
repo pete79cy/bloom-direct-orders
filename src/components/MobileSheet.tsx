@@ -38,21 +38,48 @@ export function MobileSheet({
   const [vvHeight, setVvHeight] = useState<number | null>(null);
 
   useEffect(() => {
-    if (!shouldRender || typeof window === 'undefined' || !window.visualViewport) return;
+    if (!shouldRender || typeof window === 'undefined') return;
     const vv = window.visualViewport;
+
+    // Functional setState bail-out so identical samples don't re-render.
     const update = () => {
-      // Inset from the bottom = the part of the layout viewport that's
-      // currently hidden (mostly the on-screen keyboard).
-      const inset = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
-      setKeyboardInset(inset);
-      setVvHeight(vv.height);
+      const h = vv?.height ?? window.innerHeight;
+      const offsetTop = vv?.offsetTop ?? 0;
+      const inset = Math.max(0, window.innerHeight - h - offsetTop);
+      setVvHeight((prev) => (prev !== h ? h : prev));
+      setKeyboardInset((prev) => (prev !== inset ? inset : prev));
     };
     update();
-    vv.addEventListener('resize', update);
-    vv.addEventListener('scroll', update);
+
+    // Primary signal — visualViewport (when iOS bothers to fire it).
+    vv?.addEventListener('resize', update);
+    vv?.addEventListener('scroll', update);
+
+    // Backup signals — these catch some iOS Safari edge cases where the
+    // visualViewport event doesn't fire on keyboard dismissal (e.g. when
+    // the user taps outside an input rather than hitting "Done").
+    window.addEventListener('resize', update);
+    window.addEventListener('orientationchange', update);
+    const onFocusChange = () => {
+      // Defer one frame so the OS has time to start the keyboard transition.
+      requestAnimationFrame(update);
+    };
+    document.addEventListener('focusin', onFocusChange);
+    document.addEventListener('focusout', onFocusChange);
+
+    // Last-resort safety net: poll at 4 Hz while the sheet is open.
+    // The setState bail-out above keeps this cheap — no re-renders unless
+    // the viewport actually changed.
+    const interval = window.setInterval(update, 250);
+
     return () => {
-      vv.removeEventListener('resize', update);
-      vv.removeEventListener('scroll', update);
+      vv?.removeEventListener('resize', update);
+      vv?.removeEventListener('scroll', update);
+      window.removeEventListener('resize', update);
+      window.removeEventListener('orientationchange', update);
+      document.removeEventListener('focusin', onFocusChange);
+      document.removeEventListener('focusout', onFocusChange);
+      window.clearInterval(interval);
     };
   }, [shouldRender]);
 
