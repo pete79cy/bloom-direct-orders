@@ -30,6 +30,32 @@ export function MobileSheet({
   const [animState, setAnimState] = useState<'open' | 'closed'>(open ? 'open' : 'closed');
   const exitTimeout = useRef<number | null>(null);
 
+  // Track the visual viewport so the sheet can sit on top of the on-screen
+  // keyboard on iOS Safari. Without this, `bottom: 0` puts the sheet
+  // *behind* the keyboard, and `vh` units don't shrink when the keyboard
+  // appears — the input and results disappear from view as the user types.
+  const [keyboardInset, setKeyboardInset] = useState(0);
+  const [vvHeight, setVvHeight] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!shouldRender || typeof window === 'undefined' || !window.visualViewport) return;
+    const vv = window.visualViewport;
+    const update = () => {
+      // Inset from the bottom = the part of the layout viewport that's
+      // currently hidden (mostly the on-screen keyboard).
+      const inset = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+      setKeyboardInset(inset);
+      setVvHeight(vv.height);
+    };
+    update();
+    vv.addEventListener('resize', update);
+    vv.addEventListener('scroll', update);
+    return () => {
+      vv.removeEventListener('resize', update);
+      vv.removeEventListener('scroll', update);
+    };
+  }, [shouldRender]);
+
   // Drive mount + animState lifecycle from `open`
   useEffect(() => {
     if (open) {
@@ -116,15 +142,27 @@ export function MobileSheet({
           position: 'absolute',
           left: 0,
           right: 0,
-          bottom: 0,
+          // Shift the sheet UP by the height of the on-screen keyboard so
+          // it stays fully visible (instead of hiding behind it).
+          bottom: keyboardInset,
           background: 'var(--cream-50)',
           borderTopLeftRadius: 20,
           borderTopRightRadius: 20,
-          maxHeight: '88vh',
+          // When the keyboard is up, constrain the sheet to fit within the
+          // shrunken visual viewport (with a 24px top breathing space).
+          // Otherwise fall back to the 88vh cap.
+          maxHeight: vvHeight !== null ? `${Math.max(160, vvHeight - 24)}px` : '88vh',
           display: 'flex',
           flexDirection: 'column',
-          paddingBottom: `env(safe-area-inset-bottom, 0px)`,
+          paddingBottom: keyboardInset > 0 ? 0 : `env(safe-area-inset-bottom, 0px)`,
           boxShadow: '0 -8px 32px -8px rgba(31, 51, 41, 0.18)',
+          // Combined transition: preserve the slide-in transform AND smooth
+          // the keyboard-inset shift. (Class `.ios-sheet` already sets the
+          // 320ms transform; we extend it here.)
+          transition:
+            'transform 320ms var(--ease-drawer), ' +
+            'bottom 220ms var(--ease-drawer), ' +
+            'max-height 220ms var(--ease-drawer)',
         }}
       >
         <div
