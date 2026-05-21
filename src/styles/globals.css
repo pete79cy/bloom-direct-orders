@@ -1,3 +1,7 @@
+/* Fraunces — display serif with Greek glyphs. Used sparingly for moments of character
+   (brand title, sheet headings). Body keeps the native iOS/Android system stack. */
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,400&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -5,48 +9,91 @@
 @layer base {
   :root {
     color-scheme: light;
+
+    /* ─── Botanical Refined palette ─────────────────────────────── */
+    --sage-50:  #F4F7F3;
+    --sage-100: #E6EEE2;
+    --sage-200: #C8D8C0;
+    --sage-300: #9DB995;
+    --sage-400: #6F9468;
+    --sage-500: #4E7549;
+    --sage-600: #3F6B5C;   /* primary brand */
+    --sage-700: #2F4F44;
+    --sage-800: #1E3329;
+
+    --cream-50:  #FDFCF8;
+    --cream-100: #FBFAF6;   /* surface */
+    --cream-200: #F4F1E8;
+    --cream-300: #E8E3D2;
+
+    --ink-900: #1B1F1C;     /* warmer than pure black */
+    --ink-700: #3D4842;
+    --ink-500: #6F7A73;
+    --ink-300: #A8B0AA;
+
+    --accent-clay:   #B3553D;   /* used very sparingly — destructive/alerts */
+    --accent-honey:  #C68E3B;   /* highlights */
   }
+
   html, body, #root {
     height: 100%;
-    background: rgb(242, 242, 247);
-    color: rgb(28, 28, 30);
+    background: var(--cream-100);
+    color: var(--ink-900);
     -webkit-font-smoothing: antialiased;
     font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
+    font-feature-settings: "ss01", "cv11";
   }
-  body {
-    overscroll-behavior-y: contain;
+  body { overscroll-behavior-y: contain; }
+
+  /* Heading display class — Fraunces with optical-size for true editorial feel */
+  .font-display {
+    font-family: 'Fraunces', 'Cormorant Garamond', Georgia, serif;
+    font-feature-settings: "ss01", "lnum";
+    letter-spacing: -0.01em;
   }
+
+  /* Native form controls inherit the body color so they don't look anaemic on
+     iOS where the browser darkens placeholder text. */
+  input, textarea, select, button { font-family: inherit; color: inherit; }
 }
 
 @layer utilities {
   .pt-safe { padding-top: env(safe-area-inset-top); }
   .pb-safe { padding-bottom: env(safe-area-inset-bottom); }
+
+  /* Subtle paper-grain backdrop for hero surfaces. Single SVG, no asset cost. */
+  .bg-paper {
+    background-color: var(--cream-100);
+    background-image:
+      radial-gradient(rgba(63, 107, 92, 0.04) 1px, transparent 1px),
+      radial-gradient(rgba(63, 107, 92, 0.025) 1px, transparent 1px);
+    background-size: 18px 18px, 9px 9px;
+    background-position: 0 0, 9px 9px;
+  }
 }
 
 /* ──────────────────────────────────────────────────────────────────
    iOS-style mobile shell tokens + primitives
-   Ported from bloom-crm/src/index.css to support MobileSheet,
-   MobileSearchInput, and MobileStepper.
+   Ported from bloom-crm/src/index.css — overridden here to use the
+   sage/cream palette instead of bloom-crm's defaults.
    ────────────────────────────────────────────────────────────────── */
 @layer base {
   :root {
-    /* iOS system grays (light mode) */
-    --ios-bg-grouped: #F2F2F7;
+    --ios-bg-grouped: var(--cream-100);
     --ios-bg-card: #FFFFFF;
     --ios-bg-elev: #FFFFFF;
-    --ios-ink: #000000;
-    --ios-ink-sec: rgba(60,60,67,0.60);
-    --ios-ink-ter: rgba(60,60,67,0.30);
-    --ios-ink-quad: rgba(60,60,67,0.18);
-    --ios-separator: rgba(60,60,67,0.12);
+    --ios-ink: var(--ink-900);
+    --ios-ink-sec: var(--ink-500);
+    --ios-ink-ter: var(--ink-300);
+    --ios-ink-quad: rgba(63, 75, 70, 0.18);
+    --ios-separator: rgba(63, 75, 70, 0.10);
     --ios-fill-1: rgba(120,120,128,0.20);
     --ios-fill-2: rgba(120,120,128,0.16);
-    --ios-fill-3: rgba(120,120,128,0.12);
-    --ios-fill-4: rgba(120,120,128,0.08);
-    /* Brand — nursery green */
-    --ios-brand: oklch(0.42 0.12 152);
+    --ios-fill-3: rgba(120,120,128,0.10);
+    --ios-fill-4: rgba(120,120,128,0.06);
+    /* Brand — sage instead of harsh iOS green */
+    --ios-brand: var(--sage-600);
 
-    /* Easing tokens */
     --ease-out-strong: cubic-bezier(0.23, 1, 0.32, 1);
     --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
   }
@@ -60,29 +107,23 @@
     min-height: 100vh;
   }
 
-  /* Haptic tap scale. */
   .ios-tap {
     transition: transform 160ms var(--ease-out-strong), opacity 160ms var(--ease-out-strong);
   }
   .ios-tap:active { transform: scale(0.97); opacity: 0.85; }
 
-  /* MobileSheet — data-state-driven CSS transitions. */
   .ios-sheet {
     transform: translateY(100%);
     transition: transform 320ms var(--ease-drawer);
     will-change: transform;
   }
-  .ios-sheet[data-state="open"] {
-    transform: translateY(0);
-  }
+  .ios-sheet[data-state="open"] { transform: translateY(0); }
 
   .ios-sheet-backdrop {
     opacity: 0;
     transition: opacity 200ms ease-out;
   }
-  .ios-sheet-backdrop[data-state="open"] {
-    opacity: 1;
-  }
+  .ios-sheet-backdrop[data-state="open"] { opacity: 1; }
 
   @media (prefers-reduced-motion: reduce) {
     .ios-tap:active { transform: none; }

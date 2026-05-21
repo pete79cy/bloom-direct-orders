@@ -117,36 +117,47 @@ export function MobileSheet({
           left: 0,
           right: 0,
           bottom: 0,
-          background: 'var(--ios-bg-elev)',
-          borderTopLeftRadius: 14,
-          borderTopRightRadius: 14,
-          maxHeight: '85vh',
+          background: 'var(--cream-50)',
+          borderTopLeftRadius: 20,
+          borderTopRightRadius: 20,
+          maxHeight: '88vh',
           display: 'flex',
           flexDirection: 'column',
           paddingBottom: `env(safe-area-inset-bottom, 0px)`,
+          boxShadow: '0 -8px 32px -8px rgba(31, 51, 41, 0.18)',
         }}
       >
         <div
           aria-hidden="true"
           style={{
-            width: 36,
-            height: 5,
-            borderRadius: 3,
+            width: 40,
+            height: 4,
+            borderRadius: 2,
             background: 'var(--ios-ink-quad)',
-            margin: '6px auto 4px',
+            margin: '8px auto 2px',
           }}
         />
         {title && (
           <div
             style={{
               textAlign: 'center',
-              fontSize: 16,
-              fontWeight: 600,
-              padding: '6px 16px 12px',
+              padding: '12px 16px 14px',
               borderBottom: '0.5px solid var(--ios-separator)',
             }}
           >
-            {title}
+            <div
+              className="font-display"
+              style={{
+                fontSize: 22,
+                fontWeight: 500,
+                fontStyle: 'italic',
+                letterSpacing: '-0.015em',
+                color: 'var(--sage-700)',
+                lineHeight: 1.1,
+              }}
+            >
+              {title}
+            </div>
           </div>
         )}
         <div style={{ flex: 1, overflowY: 'auto' }}>{children}</div>

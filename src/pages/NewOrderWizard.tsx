@@ -7,10 +7,15 @@ import {
 import MobileStepper from '@/components/MobileStepper';
 import MobileSheet from '@/components/MobileSheet';
 import QtyStepper from '@/components/QtyStepper';
+import VariantCard from '@/components/VariantCard';
+import LeafMark from '@/components/LeafMark';
 import {
   useCustomers, usePlants, useVariants, useCustomerPrices, useCreateDirectOrder,
 } from '@/lib/queries';
 import { fmtEUR, fmtLongDate, isoToday, addDays } from '@/lib/format';
+import {
+  prettyScientificName, cleanSizeSummary, fallbackVariantLabel,
+} from '@/lib/plant-display';
 import type { Customer, Plant, Variant, CustomerPrice } from '@/types';
 
 const STEP_LABELS = ['Πελάτης', 'Στοιχεία', 'Γραμμές', 'Έλεγχος'];
@@ -246,11 +251,16 @@ function Step3Lines({ customer, plants, variants, customerPrices, lines, onChang
     () =>
       variants.map((v) => {
         const p = plants.find((x) => x.id === v.plant_id);
+        const prettyName = prettyScientificName(p?.scientific_name);
+        const cleanedSize = cleanSizeSummary(v.size_summary) ?? '';
         return {
           variant: v,
           plant: p,
-          label: [p?.scientific_name, v.size_summary].filter(Boolean).join(' · '),
-          searchBlob: `${p?.scientific_name ?? ''} ${p?.common_name ?? ''} ${v.variant_code}`.toLowerCase(),
+          label: [prettyName, cleanedSize].filter(Boolean).join(' · ') ||
+                 fallbackVariantLabel(v.variant_code),
+          // Keep variant_code in the search blob so SKU lookups still work,
+          // but never render it.
+          searchBlob: `${prettyName} ${p?.common_name ?? ''} ${v.variant_code} ${cleanedSize}`.toLowerCase(),
         };
       }),
     [variants, plants],
@@ -340,30 +350,59 @@ function Step3Lines({ customer, plants, variants, customerPrices, lines, onChang
       </div>
 
       <MobileSheet open={sheetOpen} onClose={() => setSheetOpen(false)} title="Προσθήκη γραμμής">
-        <div className="px-4 pb-4">
-          <input
-            autoFocus
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Αναζήτηση φυτού"
-            className="w-full h-11 px-4 rounded-xl bg-gray-100 border-none text-base"
-          />
-          <ul className="mt-3 divide-y divide-gray-100 max-h-[60vh] overflow-y-auto">
-            {filtered.map((x) => (
-              <li key={x.variant.id}>
-                <button
-                  type="button"
-                  onClick={() => addLine(x.variant)}
-                  className="w-full text-left py-3"
-                >
-                  <p className="font-medium">{x.plant?.scientific_name ?? '—'}</p>
-                  <p className="text-xs text-ios-ink-sec">
-                    {x.variant.variant_code}
-                    {x.variant.size_summary ? ` · ${x.variant.size_summary}` : ''}
-                  </p>
-                </button>
+        <div className="px-4 pt-3 pb-4">
+          <div className="relative">
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-ink-300 pointer-events-none" />
+            <input
+              autoFocus
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Αναζήτηση φυτού…"
+              className="w-full h-11 pl-10 pr-10 rounded-xl bg-cream-200/60 border border-cream-300/50 text-base placeholder:text-ink-300 focus:outline-none focus:bg-white focus:border-sage-300 transition-colors"
+            />
+            {query && (
+              <button
+                type="button"
+                onClick={() => setQuery('')}
+                aria-label="Καθαρισμός"
+                className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full bg-ink-300/30 text-white flex items-center justify-center text-xs"
+              >
+                ×
+              </button>
+            )}
+          </div>
+
+          {filtered.length > 0 && (
+            <p className="mt-3 px-1 text-[10px] uppercase tracking-[0.15em] text-ink-300">
+              {query ? `${filtered.length} αποτελέσματα` : 'Δημοφιλή φυτά'}
+            </p>
+          )}
+
+          <ul className="mt-2 max-h-[58vh] overflow-y-auto -mx-2 pr-1">
+            {filtered.length === 0 ? (
+              <li className="px-4 py-12 text-center">
+                <div className="mx-auto mb-3 text-sage-300">
+                  <LeafMark size={36} />
+                </div>
+                <p className="font-display italic text-ink-500 text-lg">Κανένα φυτό</p>
+                <p className="text-xs text-ink-300 mt-1">
+                  Δοκίμασε άλλη αναζήτηση ή επιστημονικό όνομα
+                </p>
               </li>
-            ))}
+            ) : (
+              filtered.map((x) => (
+                <li key={x.variant.id}>
+                  <VariantCard
+                    variant={x.variant}
+                    plant={x.plant}
+                    customerPrice={
+                      customerPrices.find((cp) => cp.variant_id === x.variant.id)?.effective_unit_price
+                    }
+                    onAdd={() => addLine(x.variant)}
+                  />
+                </li>
+              ))
+            )}
           </ul>
         </div>
       </MobileSheet>
@@ -380,36 +419,50 @@ interface LineRowProps {
 
 function LineRow({ line, label, onUpdate, onRemove }: LineRowProps) {
   const [priceEdit, setPriceEdit] = useState(false);
+  // Split "Genus species · size info" so we can italicise the name only.
+  const [primary, ...rest] = label.split(' · ');
+  const meta = rest.join(' · ');
+
   const PriceIcon =
     line.price_source === 'customer' ? Tag : line.price_source === 'override' ? Edit3 : FileText;
+  const priceColor =
+    line.price_source === 'customer' ? 'text-sage-600' :
+    line.price_source === 'override' ? 'text-accent-honey' : 'text-ink-500';
 
   return (
     <li className="px-4 py-3">
       <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="font-medium truncate">{label}</p>
+        <div className="min-w-0 flex-1">
+          <p className="font-display italic text-ink-900 text-[16px] tracking-tight truncate">
+            {primary}
+          </p>
+          {meta && (
+            <p className="text-[11px] uppercase tracking-[0.12em] text-ink-300 mt-0.5">{meta}</p>
+          )}
           <button
             type="button"
             onClick={() => setPriceEdit(true)}
-            className="mt-1 inline-flex items-center gap-1 text-sm text-ios-tint"
+            className={'mt-2 inline-flex items-center gap-1 text-sm font-medium ' + priceColor}
           >
             <PriceIcon className="w-3.5 h-3.5" />
-            {fmtEUR(line.unit_price)} / τμχ
+            {fmtEUR(line.unit_price)} <span className="text-ink-300 font-normal">/ τμχ</span>
           </button>
         </div>
         <button
           type="button"
           aria-label="Διαγραφή"
           onClick={onRemove}
-          className="p-2 -m-2 text-ios-red"
+          className="p-2 -m-2 text-ink-300 hover:text-accent-clay transition-colors"
         >
           <Trash2 className="w-4 h-4" />
         </button>
       </div>
 
-      <div className="mt-2 flex items-center justify-between">
+      <div className="mt-3 flex items-center justify-between">
         <QtyStepper value={line.qty} min={1} onChange={(qty) => onUpdate({ qty })} />
-        <span className="font-medium tabular-nums">{fmtEUR(line.qty * line.unit_price)}</span>
+        <span className="font-medium tabular-nums text-ink-900">
+          {fmtEUR(line.qty * line.unit_price)}
+        </span>
       </div>
 
       {priceEdit && (

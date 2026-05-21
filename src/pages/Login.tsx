@@ -1,9 +1,9 @@
 import { useState, type FormEvent } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { toast } from 'sonner';
-import { Leaf } from 'lucide-react';
 import { login } from '@/lib/auth';
 import { ApiError } from '@/lib/api';
+import LeafMark from '@/components/LeafMark';
 
 interface LocationState {
   from?: string;
@@ -39,19 +39,33 @@ export default function Login() {
   }
 
   return (
-    <div className="min-h-full flex flex-col justify-center px-6 pt-safe pb-safe">
-      <div className="max-w-sm w-full mx-auto">
-        <div className="flex flex-col items-center mb-8">
-          <div className="w-16 h-16 rounded-2xl bg-ios-green flex items-center justify-center mb-3">
-            <Leaf className="w-8 h-8 text-white" />
+    <div className="min-h-full bg-paper flex flex-col justify-center px-6 pt-safe pb-safe relative overflow-hidden">
+      {/* Decorative botanical mark, large but very faint, top-right */}
+      <div
+        aria-hidden="true"
+        className="absolute -top-8 -right-12 text-sage-200/60 pointer-events-none select-none"
+      >
+        <LeafMark size={220} />
+      </div>
+
+      <div className="max-w-sm w-full mx-auto relative">
+        <div className="flex flex-col items-center mb-10">
+          <div className="w-14 h-14 rounded-2xl bg-sage-600 flex items-center justify-center mb-4 shadow-lg shadow-sage-600/20">
+            <LeafMark size={28} className="text-cream-50" />
           </div>
-          <h1 className="text-2xl font-semibold">Bloom Orders</h1>
-          <p className="text-ios-ink-sec text-sm mt-1">Pakkoutis Nurseries</p>
+          <h1 className="font-display italic text-[40px] leading-none text-sage-700 tracking-tight">
+            Bloom <span className="text-ink-900 not-italic font-medium">Orders</span>
+          </h1>
+          <p className="text-ink-500 text-[13px] mt-2 tracking-[0.18em] uppercase">
+            Pakkoutis&nbsp;·&nbsp;Nurseries
+          </p>
         </div>
 
         <form onSubmit={onSubmit} className="space-y-4">
           <label className="block">
-            <span className="text-sm text-ios-ink-sec mb-1 block">Email</span>
+            <span className="text-[11px] uppercase tracking-[0.15em] text-ink-500 mb-1.5 block">
+              Email
+            </span>
             <input
               type="email"
               required
@@ -59,40 +73,46 @@ export default function Login() {
               autoCapitalize="none"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="w-full h-12 px-4 rounded-xl bg-white border border-gray-200 text-base"
+              className="w-full h-12 px-4 rounded-xl bg-white border border-cream-300/60 text-base focus:outline-none focus:border-sage-400 focus:ring-2 focus:ring-sage-200/40 transition-colors"
             />
           </label>
 
           <label className="block">
-            <span className="text-sm text-ios-ink-sec mb-1 block">Κωδικός</span>
+            <span className="text-[11px] uppercase tracking-[0.15em] text-ink-500 mb-1.5 block">
+              Κωδικός
+            </span>
             <input
               type="password"
               required
               autoComplete="current-password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="w-full h-12 px-4 rounded-xl bg-white border border-gray-200 text-base"
+              className="w-full h-12 px-4 rounded-xl bg-white border border-cream-300/60 text-base focus:outline-none focus:border-sage-400 focus:ring-2 focus:ring-sage-200/40 transition-colors"
             />
           </label>
 
-          <label className="flex items-center gap-3 py-2">
+          <label className="flex items-center gap-3 py-2 cursor-pointer">
             <input
               type="checkbox"
               checked={rememberMe}
               onChange={(e) => setRememberMe(e.target.checked)}
-              className="w-5 h-5 accent-ios-tint"
+              className="w-5 h-5 accent-sage-600"
             />
-            <span>Να με θυμάσαι</span>
+            <span className="text-ink-700">Να με θυμάσαι</span>
           </label>
 
           <button
             type="submit"
             disabled={submitting}
-            className="w-full h-12 rounded-xl bg-ios-tint text-white font-medium disabled:opacity-50"
+            className="ios-tap w-full h-12 rounded-xl bg-sage-600 hover:bg-sage-700 text-cream-50 font-medium tracking-wide disabled:opacity-50 shadow-md shadow-sage-600/20"
           >
             {submitting ? 'Σύνδεση…' : 'Σύνδεση'}
           </button>
         </form>
+
+        <p className="mt-10 text-center text-[10px] uppercase tracking-[0.2em] text-ink-300">
+          Pakkoutis Nurseries · Direct Orders
+        </p>
       </div>
     </div>
   );
