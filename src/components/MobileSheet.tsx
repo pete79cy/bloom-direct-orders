@@ -41,13 +41,34 @@ export function MobileSheet({
     if (!shouldRender || typeof window === 'undefined') return;
     const vv = window.visualViewport;
 
-    // Functional setState bail-out so identical samples don't re-render.
+    // Distinguish "keyboard is up" from "URL bar / toolbar is showing".
+    // iOS Safari's URL bar takes up to ~85px of vertical space, which
+    // would otherwise be misread as a keyboard inset, causing the sheet
+    // to shift up and shrink even with no keyboard present.
+    //
+    // Threshold of 100px reliably separates URL-bar chrome (≤ ~85px)
+    // from any real on-screen keyboard (always ≥ ~250px on phones).
+    const KEYBOARD_THRESHOLD_PX = 100;
+
     const update = () => {
-      const h = vv?.height ?? window.innerHeight;
+      const layoutH = window.innerHeight;
+      const visualH = vv?.height ?? layoutH;
+      const heightDiff = layoutH - visualH;
       const offsetTop = vv?.offsetTop ?? 0;
-      const inset = Math.max(0, window.innerHeight - h - offsetTop);
-      setVvHeight((prev) => (prev !== h ? h : prev));
-      setKeyboardInset((prev) => (prev !== inset ? inset : prev));
+      const keyboardOpen = heightDiff > KEYBOARD_THRESHOLD_PX;
+
+      if (keyboardOpen) {
+        // Real keyboard — lift the sheet by the hidden amount and clamp
+        // max-height to the visible viewport.
+        const inset = Math.max(0, heightDiff - offsetTop);
+        setVvHeight((prev) => (prev !== visualH ? visualH : prev));
+        setKeyboardInset((prev) => (prev !== inset ? inset : prev));
+      } else {
+        // No keyboard. Reset to defaults so the sheet sits at the bottom
+        // and uses the standard 88vh cap (signalled by vvHeight === null).
+        setVvHeight((prev) => (prev !== null ? null : prev));
+        setKeyboardInset((prev) => (prev !== 0 ? 0 : prev));
+      }
     };
     update();
 
