@@ -1,11 +1,12 @@
+import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, FileText, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useOrder, usePatchOrder } from '@/lib/queries';
 import { fmtEUR, fmtLongDate } from '@/lib/format';
 import StatusTimeline from '@/components/StatusTimeline';
 import { prettyScientificName, cleanSizeSummary } from '@/lib/plant-display';
-import type { OrderStatus, OrderLineEnriched } from '@/types';
+import type { OrderStatus, OrderLineEnriched, OrderDetail as OrderDetailT } from '@/types';
 
 const STATUS_NEXT: Partial<Record<OrderStatus, OrderStatus[]>> = {
   PENDING: ['PREPARING', 'CANCELLED'],
@@ -46,9 +47,25 @@ export default function OrderDetail() {
   const navigate = useNavigate();
   const { data, isLoading } = useOrder(id);
   const patch = usePatchOrder();
+  const [pdfBusy, setPdfBusy] = useState(false);
 
   if (isLoading || !data) {
     return <div className="p-4 text-ink-500">Φόρτωση…</div>;
+  }
+
+  async function onExportPdf(detail: OrderDetailT) {
+    setPdfBusy(true);
+    try {
+      // Lazy-import so jsPDF + autotable (~280KB) only land when needed.
+      const { shareOrDownloadOrderPdf } = await import('@/lib/pdf-order');
+      const result = await shareOrDownloadOrderPdf(detail);
+      toast.success(result === 'shared' ? 'PDF διαμοιράστηκε' : 'PDF κατέβηκε');
+    } catch (err) {
+      console.error('PDF export failed:', err);
+      toast.error('Αποτυχία δημιουργίας PDF');
+    } finally {
+      setPdfBusy(false);
+    }
   }
 
   const { order, lines, customer } = data;
@@ -192,6 +209,24 @@ export default function OrderDetail() {
             );
           })}
         </div>
+      </section>
+
+      {/* PDF export */}
+      <section style={{ padding: '20px 20px 0' }}>
+        <button
+          type="button"
+          disabled={pdfBusy}
+          onClick={() => onExportPdf(data)}
+          className="btn-secondary ios-tap"
+          style={{ height: 48 }}
+        >
+          {pdfBusy ? (
+            <Loader2 size={16} color="var(--sage-700)" className="animate-spin" />
+          ) : (
+            <FileText size={16} color="var(--sage-700)" strokeWidth={1.75} />
+          )}
+          {pdfBusy ? 'Δημιουργία PDF…' : 'Λήψη / Κοινοποίηση PDF'}
+        </button>
       </section>
 
       {/* Notes */}
