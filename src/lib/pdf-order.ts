@@ -2,12 +2,13 @@
  * Order PDF generator — client-side jsPDF.
  *
  * Serves three audiences in one document:
- *   - Customer copy (logo, customer block, totals, status)
- *   - Picking list (mono SKU/size, qty in larger weight, scientific names)
+ *   - Customer copy (company header, customer block, totals with VAT, status)
+ *   - Picking list (mono SKU/size, qty in bold)
  *   - Internal archive (everything captured)
  *
- * Greek glyph support via NotoSans (Regular + Bold), loaded from /fonts/.
- * The fonts ship in /public/fonts/ — bundled into dist by Vite.
+ * Design language follows the rest of the app: sage + cream, refined
+ * hierarchy, hairline rules, plenty of whitespace, restrained color.
+ * Greek glyph support via NotoSans (Regular + Bold).
  *
  * Lazy-imported from Order Detail to keep the main bundle slim.
  */
@@ -18,17 +19,24 @@ import type { OrderDetail, OrderLineEnriched } from '@/types';
 import { prettyScientificName, cleanSizeSummary } from '@/lib/plant-display';
 import { fmtEUR, fmtLongDate } from '@/lib/format';
 
-/* ── Brand colours (RGB, jsPDF style) ─────────────────────── */
+/* ── Brand colours (RGB triples for jsPDF) ────────────────── */
+const SAGE_800 = [30, 51, 41] as const;
 const SAGE_700 = [47, 79, 68] as const;
-const SAGE_50  = [244, 247, 243] as const;
 const INK_900  = [27, 31, 28] as const;
 const INK_700  = [61, 72, 66] as const;
 const INK_500  = [111, 122, 115] as const;
 const INK_300  = [168, 176, 170] as const;
 const CREAM_200 = [244, 241, 232] as const;
 const HONEY    = [198, 142, 59] as const;
+const HAIRLINE = [222, 222, 215] as const;
 
 const FONT_FAMILY = 'NotoSans';
+
+/* Default VAT rate when an order line does not specify one.
+   Cyprus standard VAT is 19% (nursery products in 2026). Adjust here
+   when business reality changes — every other number in this document
+   derives from the per-line vat_rate or this fallback. */
+const DEFAULT_VAT_RATE = 19;
 
 const STATUS_LABELS: Record<string, string> = {
   PENDING: 'Εκκρεμής',
@@ -40,11 +48,12 @@ const STATUS_LABELS: Record<string, string> = {
   CANCELLED: 'Ακυρωμένη',
 };
 
+/* ── Font loading helpers ────────────────────────────────── */
+
 async function fetchFontBase64(url: string): Promise<string> {
   const res = await fetch(url);
   if (!res.ok) throw new Error(`Failed to load font: ${url}`);
   const buf = await res.arrayBuffer();
-  // Convert to base64 — chunked to avoid call-stack overflow on large buffers
   const bytes = new Uint8Array(buf);
   let bin = '';
   const chunk = 0x8000;
@@ -71,17 +80,49 @@ function setFont(doc: jsPDF, weight: 'normal' | 'bold' = 'normal', size = 10) {
   doc.setFont(FONT_FAMILY, weight);
   doc.setFontSize(size);
 }
-
 function setColor(doc: jsPDF, rgb: readonly [number, number, number]) {
   doc.setTextColor(rgb[0], rgb[1], rgb[2]);
 }
-
 function setFill(doc: jsPDF, rgb: readonly [number, number, number]) {
   doc.setFillColor(rgb[0], rgb[1], rgb[2]);
 }
-
 function setDraw(doc: jsPDF, rgb: readonly [number, number, number]) {
   doc.setDrawColor(rgb[0], rgb[1], rgb[2]);
+}
+
+/* ── Computation: subtotals + VAT ─────────────────────────── */
+
+interface LineComputed {
+  net: number;       // qty × unit_price × (1 − discount/100)
+  vat: number;       // net × vat_rate/100
+  vat_rate: number;  // effective rate used
+}
+
+function computeLine(l: OrderLineEnriched): LineComputed {
+  const discount = l.discount_pct ?? 0;
+  const net = l.qty * l.unit_price * (1 - discount / 100);
+  const vat_rate = l.vat_rate ?? DEFAULT_VAT_RATE;
+  const vat = net * (vat_rate / 100);
+  return { net, vat, vat_rate };
+}
+
+/**
+ * Pick the dominant VAT rate across lines to show as the totals-block
+ * label ("ΦΠΑ 19%"). Falls back to the default if no lines exist.
+ */
+function dominantVatRate(lines: OrderLineEnriched[]): number {
+  if (lines.length === 0) return DEFAULT_VAT_RATE;
+  const counts = new Map<number, number>();
+  for (const l of lines) {
+    const r = l.vat_rate ?? DEFAULT_VAT_RATE;
+    counts.set(r, (counts.get(r) ?? 0) + 1);
+  }
+  let topRate = DEFAULT_VAT_RATE;
+  let topCount = 0;
+  for (const [rate, c] of counts) {
+    if (c > topCount) { topCount = c; topRate = rate; }
+  }
+  return topRate;
 }
 
 /* ── Main entry ───────────────────────────────────────────── */
@@ -92,258 +133,287 @@ export async function generateOrderPdf(detail: OrderDetail): Promise<Blob> {
 
   const pageWidth = doc.internal.pageSize.getWidth();   // 210
   const pageHeight = doc.internal.pageSize.getHeight(); // 297
-  const margin = 16;
+  const margin = 18;
   const contentW = pageWidth - margin * 2;
 
-  /* ── Header band ─────────────────────────────────────── */
+  /* ── Header ──────────────────────────────────────────
+     Restrained: no full-bleed band. Slim sage hairline at the very top
+     for brand presence, then company name in sage-800 against the
+     cream document. Cleaner, more document-like than a colored banner. */
+
+  // Top hairline accent
   setFill(doc, SAGE_700);
-  doc.rect(0, 0, pageWidth, 28, 'F');
+  doc.rect(0, 0, pageWidth, 3, 'F');
 
-  // Wordmark
-  setFont(doc, 'bold', 20);
-  doc.setTextColor(253, 252, 248); // cream-50
-  doc.text('Bloom Orders', margin, 16);
+  // Company name
+  setFont(doc, 'bold', 16);
+  setColor(doc, SAGE_800);
+  doc.text('Andreas Pakkoutis & Sons Ltd', margin, 18);
 
-  setFont(doc, 'normal', 8);
-  doc.setTextColor(220, 230, 222);
-  doc.text('PAKKOUTIS NURSERIES · DIRECT ORDERS', margin, 22);
+  // Tagline — eyebrow
+  setFont(doc, 'normal', 7.5);
+  setColor(doc, INK_500);
+  doc.text('PAKKOUTIS NURSERIES  ·  DIRECT ORDERS', margin, 23.5);
 
-  // Order number, top-right, mono-feeling
+  // Order metadata — right column
+  setFont(doc, 'normal', 7.5);
+  setColor(doc, INK_500);
+  doc.text('ΑΡΙΘΜΟΣ', pageWidth - margin, 13, { align: 'right' });
+
   setFont(doc, 'bold', 14);
-  doc.setTextColor(253, 252, 248);
-  doc.text(detail.order.order_number, pageWidth - margin, 16, { align: 'right' });
+  setColor(doc, INK_900);
+  doc.text(detail.order.order_number, pageWidth - margin, 19, { align: 'right' });
 
-  setFont(doc, 'normal', 8);
-  doc.setTextColor(220, 230, 222);
-  doc.text(
-    `STATUS · ${(STATUS_LABELS[detail.order.status] ?? detail.order.status).toUpperCase()}`,
-    pageWidth - margin,
-    22,
-    { align: 'right' },
-  );
+  setFont(doc, 'normal', 7.5);
+  setColor(doc, INK_500);
+  const statusLabel = STATUS_LABELS[detail.order.status] ?? detail.order.status;
+  doc.text(`STATUS  ·  ${statusLabel.toUpperCase()}`, pageWidth - margin, 23.5, { align: 'right' });
 
-  /* ── Customer + Delivery block ─────────────────────── */
-  let y = 42;
+  // Hairline divider beneath header block
+  let y = 32;
+  setDraw(doc, HAIRLINE);
+  doc.setLineWidth(0.2);
+  doc.line(margin, y, pageWidth - margin, y);
 
-  setFont(doc, 'normal', 8);
+  /* ── Customer + Delivery — two-column meta block ────── */
+  y = 42;
+
+  // Left column — customer
+  setFont(doc, 'normal', 7.5);
   setColor(doc, INK_500);
   doc.text('ΠΕΛΑΤΗΣ', margin, y);
 
   const customer = detail.customer;
   const customerName = customer?.trading_name || customer?.legal_name || 'Άγνωστος πελάτης';
-  const customerLegal = customer?.trading_name && customer?.legal_name !== customer?.trading_name
-    ? customer.legal_name
-    : null;
+  const customerLegal =
+    customer?.trading_name && customer.legal_name !== customer.trading_name
+      ? customer.legal_name
+      : null;
 
-  y += 5;
-  setFont(doc, 'bold', 14);
+  setFont(doc, 'bold', 13);
   setColor(doc, INK_900);
-  doc.text(customerName, margin, y);
+  doc.text(customerName, margin, y + 6);
 
   if (customerLegal) {
-    y += 5;
     setFont(doc, 'normal', 9);
     setColor(doc, INK_500);
-    doc.text(customerLegal, margin, y);
+    doc.text(customerLegal, margin, y + 11);
   }
 
-  // Delivery date — right column
-  setFont(doc, 'normal', 8);
+  // Right column — delivery
+  setFont(doc, 'normal', 7.5);
   setColor(doc, INK_500);
-  doc.text('ΠΑΡΑΔΟΣΗ', pageWidth - margin, 42, { align: 'right' });
+  doc.text('ΠΑΡΑΔΟΣΗ', pageWidth - margin, y, { align: 'right' });
 
-  setFont(doc, 'bold', 12);
+  setFont(doc, 'bold', 13);
   setColor(doc, SAGE_700);
-  doc.text(fmtLongDate(detail.order.delivery_date), pageWidth - margin, 48, { align: 'right' });
+  doc.text(fmtLongDate(detail.order.delivery_date), pageWidth - margin, y + 6, { align: 'right' });
 
-  // Hairline divider
-  y = 64;
-  setDraw(doc, INK_300);
-  doc.setLineWidth(0.2);
-  doc.line(margin, y, pageWidth - margin, y);
+  // Spacer
+  y = customerLegal ? y + 21 : y + 17;
 
-  /* ── Lines table ─────────────────────────────────────── */
-  y += 8;
-
-  setFont(doc, 'normal', 8);
+  /* ── Lines table ────────────────────────────────────── */
+  setFont(doc, 'normal', 7.5);
   setColor(doc, INK_500);
-  doc.text(`${String(detail.lines.length).padStart(2, '0')} ΓΡΑΜΜΕΣ`, margin, y);
+  doc.text(`${String(detail.lines.length).padStart(2, '0')}  ΓΡΑΜΜΕΣ`, margin, y);
+  y += 4;
 
-  y += 3;
-
-  const rows = detail.lines.map((l: OrderLineEnriched, i) => {
+  const rows = detail.lines.map((l, i) => {
     const name = prettyScientificName(l.plant_scientific_name) || l.description || l.variant_id;
     const size = cleanSizeSummary(l.size_summary) ?? '—';
     const discount = l.discount_pct ?? 0;
-    const subtotal = l.qty * l.unit_price * (1 - discount / 100);
+    const { net } = computeLine(l);
     return [
-      String(i + 1).padStart(2, '0'),
+      String(i + 1),                  // # — plain integer, not zero-padded so 1-digit fits
       name,
       size.toUpperCase(),
       String(l.qty),
       fmtEUR(l.unit_price),
       discount > 0 ? `-${discount.toFixed(0)}%` : '',
-      fmtEUR(subtotal),
+      fmtEUR(net),
     ];
   });
 
   autoTable(doc, {
     startY: y,
     margin: { left: margin, right: margin },
-    head: [['#', 'Φυτό', 'Μέγεθος', 'Ποσ.', 'Μον. τιμή', 'Έκπτ.', 'Σύνολο']],
+    head: [['#', 'ΦΥΤΟ', 'ΜΕΓΕΘΟΣ', 'ΠΟΣ.', 'ΜΟΝ. ΤΙΜΗ', 'ΕΚΠΤ.', 'ΣΥΝΟΛΟ']],
     body: rows,
     theme: 'plain',
     styles: {
       font: FONT_FAMILY,
-      fontSize: 9,
-      cellPadding: { top: 3, right: 3, bottom: 3, left: 3 },
+      fontSize: 9.5,
+      cellPadding: { top: 4, right: 4, bottom: 4, left: 4 },
       textColor: INK_900 as unknown as [number, number, number],
-      lineColor: [232, 232, 226] as [number, number, number],
+      lineColor: HAIRLINE as unknown as [number, number, number],
       lineWidth: 0.1,
+      valign: 'middle',
     },
     headStyles: {
       font: FONT_FAMILY,
-      fontStyle: 'bold',
+      fontStyle: 'normal',
       fontSize: 7,
       textColor: INK_500 as unknown as [number, number, number],
-      fillColor: SAGE_50 as unknown as [number, number, number],
-      lineColor: [232, 232, 226] as [number, number, number],
-      lineWidth: 0.1,
-      cellPadding: { top: 4, right: 3, bottom: 4, left: 3 },
+      fillColor: [255, 255, 255] as [number, number, number],
+      lineColor: HAIRLINE as unknown as [number, number, number],
+      lineWidth: { top: 0, right: 0, bottom: 0.4, left: 0 },
+      cellPadding: { top: 4, right: 4, bottom: 5, left: 4 },
+      // Letter-spacing isn't a jsPDF concept; we emulate by uppercasing
+      // and padding with spaces in header strings above (' · ').
+    },
+    bodyStyles: {
+      lineWidth: { top: 0, right: 0, bottom: 0.1, left: 0 },
     },
     columnStyles: {
-      0: { halign: 'right', cellWidth: 8, textColor: INK_300 as unknown as [number, number, number] },
+      0: {
+        halign: 'right',
+        cellWidth: 12,                     // ← fixes the wrap bug (was 8mm)
+        textColor: INK_300 as unknown as [number, number, number],
+        fontSize: 9,
+      },
       1: { fontStyle: 'bold' },
-      2: { fontSize: 7.5, textColor: INK_500 as unknown as [number, number, number] },
-      3: { halign: 'right', fontStyle: 'bold' },
-      4: { halign: 'right' },
-      5: { halign: 'right', textColor: HONEY as unknown as [number, number, number], fontSize: 8 },
-      6: { halign: 'right', fontStyle: 'bold' },
-    },
-    didDrawCell: (data) => {
-      // Highlight discounted rows subtly
-      if (data.section === 'body' && data.column.index === 5 && data.cell.text[0]) {
-        // No-op — keeping as a hook if we want amber backgrounds later
-      }
+      2: {
+        fontSize: 7.5,
+        textColor: INK_500 as unknown as [number, number, number],
+        cellWidth: 32,
+      },
+      3: { halign: 'right', fontStyle: 'bold', cellWidth: 14 },
+      4: { halign: 'right', cellWidth: 24 },
+      5: {
+        halign: 'right',
+        textColor: HONEY as unknown as [number, number, number],
+        fontSize: 8.5,
+        cellWidth: 14,
+      },
+      6: { halign: 'right', fontStyle: 'bold', cellWidth: 24 },
     },
   });
 
-  // @ts-expect-error — lastAutoTable is added by the autoTable plugin
+  // @ts-expect-error — added by the autoTable plugin
   const tableEndY: number = doc.lastAutoTable.finalY;
 
-  /* ── Totals block ────────────────────────────────────── */
+  /* ── Totals block — always shows VAT ─────────────────── */
   const lines = detail.lines;
   const totalQty = lines.reduce((s, l) => s + l.qty, 0);
-  const subtotal = lines.reduce((s, l) => {
-    const discount = l.discount_pct ?? 0;
-    return s + l.qty * l.unit_price * (1 - discount / 100);
-  }, 0);
-  // VAT info — bloom-crm tracks vat_rate per line; sum the line-level VAT.
-  const vatAmount = lines.reduce((s, l) => {
-    const discount = l.discount_pct ?? 0;
-    const net = l.qty * l.unit_price * (1 - discount / 100);
-    return s + net * ((l.vat_rate ?? 0) / 100);
-  }, 0);
+  const computed = lines.map(computeLine);
+  const subtotal = computed.reduce((s, c) => s + c.net, 0);
+  const vatAmount = computed.reduce((s, c) => s + c.vat, 0);
   const grandTotal = subtotal + vatAmount;
-  const hasVat = vatAmount > 0;
+  const shownRate = dominantVatRate(lines);
 
-  let ty = tableEndY + 8;
+  let ty = tableEndY + 12;
 
-  // Right-aligned totals
-  const totalsX = pageWidth - margin;
-  const labelX = totalsX - 40;
+  // Right-aligned totals stack, breathing room
+  const totalsRight = pageWidth - margin;
+  const totalsLeft = totalsRight - 70;       // 70mm wide block
+  const labelX = totalsLeft + 2;
+  const valueX = totalsRight - 2;
 
-  setFont(doc, 'normal', 9);
+  // Items qty — meta line, smaller
+  setFont(doc, 'normal', 8.5);
   setColor(doc, INK_500);
   doc.text('Σύνολο ποσοτήτων', labelX, ty);
-  setFont(doc, 'bold', 9);
-  setColor(doc, INK_900);
-  doc.text(String(totalQty), totalsX, ty, { align: 'right' });
+  setFont(doc, 'normal', 8.5);
+  setColor(doc, INK_700);
+  doc.text(String(totalQty), valueX, ty, { align: 'right' });
   ty += 6;
 
-  if (hasVat) {
-    setFont(doc, 'normal', 9);
-    setColor(doc, INK_500);
-    doc.text('Υποσύνολο', labelX, ty);
-    setFont(doc, 'normal', 9);
-    setColor(doc, INK_900);
-    doc.text(fmtEUR(subtotal), totalsX, ty, { align: 'right' });
-    ty += 5;
+  // Subtotal
+  setFont(doc, 'normal', 9.5);
+  setColor(doc, INK_500);
+  doc.text('Υποσύνολο', labelX, ty);
+  setFont(doc, 'normal', 9.5);
+  setColor(doc, INK_900);
+  doc.text(fmtEUR(subtotal), valueX, ty, { align: 'right' });
+  ty += 5.5;
 
-    setFont(doc, 'normal', 9);
-    setColor(doc, INK_500);
-    doc.text('ΦΠΑ', labelX, ty);
-    setFont(doc, 'normal', 9);
-    setColor(doc, INK_900);
-    doc.text(fmtEUR(vatAmount), totalsX, ty, { align: 'right' });
-    ty += 6;
-  }
+  // VAT — always shown, with rate label
+  setFont(doc, 'normal', 9.5);
+  setColor(doc, INK_500);
+  doc.text(`ΦΠΑ ${shownRate.toFixed(0)}%`, labelX, ty);
+  setFont(doc, 'normal', 9.5);
+  setColor(doc, INK_900);
+  doc.text(fmtEUR(vatAmount), valueX, ty, { align: 'right' });
+  ty += 8;
 
-  // Grand total — sage band
-  setFill(doc, SAGE_700);
-  doc.rect(labelX - 4, ty - 5, totalsX - (labelX - 4), 10, 'F');
-  setFont(doc, 'bold', 11);
-  doc.setTextColor(253, 252, 248);
+  // Hairline above grand total
+  setDraw(doc, INK_300);
+  doc.setLineWidth(0.3);
+  doc.line(totalsLeft, ty - 4, totalsRight, ty - 4);
+
+  // Grand total — quiet but emphatic. Sage type instead of a colored band.
+  setFont(doc, 'bold', 10);
+  setColor(doc, SAGE_800);
   doc.text('Σύνολο', labelX, ty + 2);
-  setFont(doc, 'bold', 13);
-  doc.text(fmtEUR(grandTotal), totalsX - 2, ty + 2, { align: 'right' });
-  ty += 14;
+  setFont(doc, 'bold', 16);
+  setColor(doc, SAGE_800);
+  doc.text(fmtEUR(grandTotal), valueX, ty + 2, { align: 'right' });
+  ty += 12;
 
   /* ── Notes (if any) ──────────────────────────────────── */
   if (detail.order.notes && detail.order.notes.trim()) {
-    if (ty > pageHeight - 50) {
+    if (ty > pageHeight - 52) {
       doc.addPage();
-      ty = margin;
+      ty = margin + 10;
+    } else {
+      ty += 4;
     }
-    setFont(doc, 'normal', 8);
+    setFont(doc, 'normal', 7.5);
     setColor(doc, INK_500);
     doc.text('ΣΗΜΕΙΩΣΕΙΣ', margin, ty);
-    ty += 5;
+    ty += 4;
     setFill(doc, CREAM_200);
-    const noteLines = doc.splitTextToSize(detail.order.notes.trim(), contentW - 8);
-    const noteBoxH = Math.max(12, noteLines.length * 5 + 6);
-    doc.roundedRect(margin, ty - 2, contentW, noteBoxH, 2, 2, 'F');
+    const noteLines = doc.splitTextToSize(detail.order.notes.trim(), contentW - 10);
+    const noteBoxH = Math.max(14, noteLines.length * 5 + 8);
+    doc.roundedRect(margin, ty, contentW, noteBoxH, 2, 2, 'F');
     setFont(doc, 'normal', 10);
     setColor(doc, INK_700);
-    doc.text(noteLines, margin + 4, ty + 4);
-    ty += noteBoxH + 4;
+    doc.text(noteLines, margin + 5, ty + 7);
+    ty += noteBoxH + 6;
   }
 
   /* ── Footer (every page) ─────────────────────────────── */
   const pageCount = doc.getNumberOfPages();
   for (let i = 1; i <= pageCount; i++) {
     doc.setPage(i);
-    setDraw(doc, INK_300);
-    doc.setLineWidth(0.1);
-    doc.line(margin, pageHeight - 14, pageWidth - margin, pageHeight - 14);
 
+    // Hairline
+    setDraw(doc, HAIRLINE);
+    doc.setLineWidth(0.1);
+    doc.line(margin, pageHeight - 16, pageWidth - margin, pageHeight - 16);
+
+    // Left — company contact line
     setFont(doc, 'normal', 7);
     setColor(doc, INK_500);
     doc.text(
-      'Pakkoutis Nurseries · smartquotations.eu · Andreas Pakkoutis & Sons Ltd',
+      'Andreas Pakkoutis & Sons Ltd  ·  smartquotations.eu',
       margin,
-      pageHeight - 9,
+      pageHeight - 10,
     );
+
+    // Right — page number
     setColor(doc, INK_300);
-    doc.text(`Σελίδα ${i} / ${pageCount}`, pageWidth - margin, pageHeight - 9, {
-      align: 'right',
-    });
+    setFont(doc, 'normal', 7);
+    doc.text(
+      `${i} / ${pageCount}`,
+      pageWidth - margin,
+      pageHeight - 10,
+      { align: 'right' },
+    );
   }
 
   return doc.output('blob');
 }
 
 /**
- * Convenience: generate the PDF, then either share via the Web Share API
- * (preferred — opens iOS/Android native share sheet so the user can send
- * via WhatsApp/email/etc) or fall back to triggering a download.
+ * Generate the PDF and try to share via the native share sheet (iOS 15+/
+ * modern Chrome). Falls back to triggering a download.
  */
 export async function shareOrDownloadOrderPdf(detail: OrderDetail): Promise<'shared' | 'downloaded'> {
   const blob = await generateOrderPdf(detail);
   const filename = `${detail.order.order_number}.pdf`;
   const file = new File([blob], filename, { type: 'application/pdf' });
 
-  // Web Share API with files — supported on iOS 15+ Safari and modern Chrome
   if (
     typeof navigator !== 'undefined' &&
     'canShare' in navigator &&
@@ -357,13 +427,10 @@ export async function shareOrDownloadOrderPdf(detail: OrderDetail): Promise<'sha
       });
       return 'shared';
     } catch (err) {
-      // User cancelled — that's fine, fall through to download
       if ((err as DOMException)?.name === 'AbortError') return 'shared';
-      // Other share errors — fall back to download
     }
   }
 
-  // Download fallback
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -371,7 +438,6 @@ export async function shareOrDownloadOrderPdf(detail: OrderDetail): Promise<'sha
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
-  // Revoke after a tick so the download has a chance to start
   setTimeout(() => URL.revokeObjectURL(url), 1000);
   return 'downloaded';
 }
