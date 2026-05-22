@@ -18,6 +18,7 @@ import autoTable from 'jspdf-autotable';
 import type { OrderDetail, OrderLineEnriched } from '@/types';
 import { prettyScientificName, cleanSizeSummary } from '@/lib/plant-display';
 import { fmtEUR, fmtLongDate } from '@/lib/format';
+import { vatBreakdown, VAT_LABEL, coerceVatRate } from '@/lib/vat';
 
 /* ── Brand colours (RGB triples for jsPDF) ────────────────── */
 const SAGE_800 = [30, 51, 41] as const;
@@ -31,12 +32,6 @@ const HONEY    = [198, 142, 59] as const;
 const HAIRLINE = [222, 222, 215] as const;
 
 const FONT_FAMILY = 'NotoSans';
-
-/* Default VAT rate when an order line does not specify one.
-   Cyprus standard VAT is 19% (nursery products in 2026). Adjust here
-   when business reality changes — every other number in this document
-   derives from the per-line vat_rate or this fallback. */
-const DEFAULT_VAT_RATE = 19;
 
 const STATUS_LABELS: Record<string, string> = {
   PENDING: 'Εκκρεμής',
@@ -94,35 +89,13 @@ function setDraw(doc: jsPDF, rgb: readonly [number, number, number]) {
 
 interface LineComputed {
   net: number;       // qty × unit_price × (1 − discount/100)
-  vat: number;       // net × vat_rate/100
-  vat_rate: number;  // effective rate used
+  vat_rate: number;  // coerced to a supported rate
 }
 
 function computeLine(l: OrderLineEnriched): LineComputed {
   const discount = l.discount_pct ?? 0;
   const net = l.qty * l.unit_price * (1 - discount / 100);
-  const vat_rate = l.vat_rate ?? DEFAULT_VAT_RATE;
-  const vat = net * (vat_rate / 100);
-  return { net, vat, vat_rate };
-}
-
-/**
- * Pick the dominant VAT rate across lines to show as the totals-block
- * label ("ΦΠΑ 19%"). Falls back to the default if no lines exist.
- */
-function dominantVatRate(lines: OrderLineEnriched[]): number {
-  if (lines.length === 0) return DEFAULT_VAT_RATE;
-  const counts = new Map<number, number>();
-  for (const l of lines) {
-    const r = l.vat_rate ?? DEFAULT_VAT_RATE;
-    counts.set(r, (counts.get(r) ?? 0) + 1);
-  }
-  let topRate = DEFAULT_VAT_RATE;
-  let topCount = 0;
-  for (const [rate, c] of counts) {
-    if (c > topCount) { topCount = c; topRate = rate; }
-  }
-  return topRate;
+  return { net, vat_rate: coerceVatRate(l.vat_rate) };
 }
 
 /* ── Main entry ───────────────────────────────────────────── */
@@ -292,24 +265,24 @@ export async function generateOrderPdf(detail: OrderDetail): Promise<Blob> {
   // @ts-expect-error — added by the autoTable plugin
   const tableEndY: number = doc.lastAutoTable.finalY;
 
-  /* ── Totals block — always shows VAT ─────────────────── */
+  /* ── Totals block — breakdown per VAT rate ───────────── */
   const lines = detail.lines;
   const totalQty = lines.reduce((s, l) => s + l.qty, 0);
   const computed = lines.map(computeLine);
   const subtotal = computed.reduce((s, c) => s + c.net, 0);
-  const vatAmount = computed.reduce((s, c) => s + c.vat, 0);
-  const grandTotal = subtotal + vatAmount;
-  const shownRate = dominantVatRate(lines);
+  const breakdown = vatBreakdown(computed);
+  const vatTotal = breakdown.reduce((s, r) => s + r.amount, 0);
+  const grandTotal = subtotal + vatTotal;
 
   let ty = tableEndY + 12;
 
   // Right-aligned totals stack, breathing room
   const totalsRight = pageWidth - margin;
-  const totalsLeft = totalsRight - 70;       // 70mm wide block
+  const totalsLeft = totalsRight - 80;       // 80mm wide block
   const labelX = totalsLeft + 2;
   const valueX = totalsRight - 2;
 
-  // Items qty — meta line, smaller
+  // Items qty — meta line
   setFont(doc, 'normal', 8.5);
   setColor(doc, INK_500);
   doc.text('Σύνολο ποσοτήτων', labelX, ty);
@@ -318,7 +291,7 @@ export async function generateOrderPdf(detail: OrderDetail): Promise<Blob> {
   doc.text(String(totalQty), valueX, ty, { align: 'right' });
   ty += 6;
 
-  // Subtotal
+  // Subtotal (net)
   setFont(doc, 'normal', 9.5);
   setColor(doc, INK_500);
   doc.text('Υποσύνολο', labelX, ty);
@@ -327,14 +300,25 @@ export async function generateOrderPdf(detail: OrderDetail): Promise<Blob> {
   doc.text(fmtEUR(subtotal), valueX, ty, { align: 'right' });
   ty += 5.5;
 
-  // VAT — always shown, with rate label
-  setFont(doc, 'normal', 9.5);
-  setColor(doc, INK_500);
-  doc.text(`ΦΠΑ ${shownRate.toFixed(0)}%`, labelX, ty);
-  setFont(doc, 'normal', 9.5);
-  setColor(doc, INK_900);
-  doc.text(fmtEUR(vatAmount), valueX, ty, { align: 'right' });
-  ty += 8;
+  // One row per VAT rate present. Includes the taxable base in small
+  // ink-300 text alongside the rate label so the customer can verify.
+  for (const row of breakdown) {
+    setFont(doc, 'normal', 9.5);
+    setColor(doc, INK_500);
+    doc.text(VAT_LABEL[row.rate], labelX, ty);
+
+    setFont(doc, 'normal', 7);
+    setColor(doc, INK_300);
+    const labelW = doc.getTextWidth(VAT_LABEL[row.rate]);
+    doc.text(`επί ${fmtEUR(row.net)}`, labelX + labelW + 3, ty);
+
+    setFont(doc, 'normal', 9.5);
+    setColor(doc, INK_900);
+    doc.text(fmtEUR(row.amount), valueX, ty, { align: 'right' });
+    ty += 5.5;
+  }
+
+  ty += 2.5;
 
   // Hairline above grand total
   setDraw(doc, INK_300);

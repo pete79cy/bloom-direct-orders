@@ -17,6 +17,13 @@ import { fmtEUR, fmtLongDate, isoToday, addDays } from '@/lib/format';
 import {
   prettyScientificName, cleanSizeSummary, fallbackVariantLabel,
 } from '@/lib/plant-display';
+import VatPicker from '@/components/VatPicker';
+import {
+  DEFAULT_VAT_RATE,
+  VAT_LABEL,
+  vatBreakdown,
+  type VatRate,
+} from '@/lib/vat';
 import type { Customer, Plant, Variant, CustomerPrice } from '@/types';
 
 const STEP_LABELS = ['Πελάτης', 'Στοιχεία', 'Γραμμές', 'Έλεγχος'];
@@ -28,6 +35,7 @@ interface DraftLine {
   qty: number;
   unit_price: number;
   price_source: PriceSource;
+  vat_rate: VatRate;
 }
 
 export default function NewOrderWizard() {
@@ -273,7 +281,14 @@ function Step3Lines({ customer, plants, variants, customerPrices, lines, onChang
     return variantsWithPlant.filter((x) => x.searchBlob.includes(q)).slice(0, 50);
   }, [variantsWithPlant, query]);
 
-  const total = lines.reduce((s, l) => s + l.qty * l.unit_price, 0);
+  // Net subtotal, VAT breakdown, and grand total — single source of truth
+  // used by the footer (here) and the review step.
+  const subtotal = lines.reduce((s, l) => s + l.qty * l.unit_price, 0);
+  const totalsBreakdown = vatBreakdown(
+    lines.map((l) => ({ net: l.qty * l.unit_price, vat_rate: l.vat_rate })),
+  );
+  const vatTotal = totalsBreakdown.reduce((s, r) => s + r.amount, 0);
+  const grandTotal = subtotal + vatTotal;
 
   function priceForVariant(variantId: string, fallback: number | null): { price: number; source: PriceSource } {
     const cp = customerPrices.find((x) => x.variant_id === variantId);
@@ -284,7 +299,13 @@ function Step3Lines({ customer, plants, variants, customerPrices, lines, onChang
   function addLine(v: Variant) {
     if (lines.some((l) => l.variant_id === v.id)) return;
     const { price, source } = priceForVariant(v.id, v.default_sell_price);
-    const next: DraftLine = { variant_id: v.id, qty: 1, unit_price: price, price_source: source };
+    const next: DraftLine = {
+      variant_id: v.id,
+      qty: 1,
+      unit_price: price,
+      price_source: source,
+      vat_rate: DEFAULT_VAT_RATE,
+    };
     onChange([...lines, next]);
     // Don't close the search modal — let the user add multiple plants in
     // a single search session. The modal is dismissed via the close button.
@@ -363,14 +384,40 @@ function Step3Lines({ customer, plants, variants, customerPrices, lines, onChang
 
       <div
         className="fixed bottom-0 inset-x-0 pb-safe z-10"
-        style={{ background: '#fff', borderTop: '1px solid rgba(63,75,70,0.10)', padding: '16px 20px 20px' }}
+        style={{ background: '#fff', borderTop: '1px solid rgba(63,75,70,0.10)', padding: '14px 20px 16px' }}
       >
-        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 12 }}>
-          <span className="text-eyebrow">Σύνολο</span>
-          <span className="font-mono-meta" style={{ fontSize: 24, fontWeight: 500 }}>
-            {fmtEUR(total)}
-          </span>
-        </div>
+        {totalsBreakdown.length > 0 && (
+          <div style={{ marginBottom: 10 }}>
+            {/* Subtotal */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 4 }}>
+              <span style={{ fontSize: 12, color: 'var(--ink-500)' }}>Υποσύνολο</span>
+              <span className="font-mono-meta" style={{ fontSize: 13, color: 'var(--ink-700)' }}>
+                {fmtEUR(subtotal)}
+              </span>
+            </div>
+            {/* VAT rows — one per rate present */}
+            {totalsBreakdown.map((row) => (
+              <div
+                key={row.rate}
+                style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 4 }}
+              >
+                <span style={{ fontSize: 12, color: 'var(--ink-500)' }}>{VAT_LABEL[row.rate]}</span>
+                <span className="font-mono-meta" style={{ fontSize: 13, color: 'var(--ink-700)' }}>
+                  {fmtEUR(row.amount)}
+                </span>
+              </div>
+            ))}
+            {/* Hairline */}
+            <div className="hairline" style={{ margin: '8px 0' }} />
+            {/* Grand total */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+              <span className="text-eyebrow">Σύνολο</span>
+              <span className="font-mono-meta" style={{ fontSize: 22, fontWeight: 500, color: 'var(--sage-800)' }}>
+                {fmtEUR(grandTotal)}
+              </span>
+            </div>
+          </div>
+        )}
         <button
           type="button"
           disabled={lines.length === 0}
@@ -598,11 +645,17 @@ function LineRow({ line, label, onUpdate, onRemove }: LineRowProps) {
         </button>
       </div>
 
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
         <QtyStepper value={line.qty} min={1} onChange={(qty) => onUpdate({ qty })} />
-        <span className="font-mono-meta" style={{ fontSize: 15, fontWeight: 500 }}>
-          {fmtEUR(line.qty * line.unit_price)}
-        </span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <VatPicker
+            value={line.vat_rate}
+            onChange={(rate) => onUpdate({ vat_rate: rate })}
+          />
+          <span className="font-mono-meta" style={{ fontSize: 15, fontWeight: 500 }}>
+            {fmtEUR(line.qty * line.unit_price)}
+          </span>
+        </div>
       </div>
 
       {priceEdit && (
@@ -643,7 +696,12 @@ function Step4Review({ customer, deliveryDate, notes, lines, variants, plants }:
   const navigate = useNavigate();
   const save = useCreateDirectOrder();
 
-  const total = lines.reduce((s, l) => s + l.qty * l.unit_price, 0);
+  const subtotal = lines.reduce((s, l) => s + l.qty * l.unit_price, 0);
+  const breakdown = vatBreakdown(
+    lines.map((l) => ({ net: l.qty * l.unit_price, vat_rate: l.vat_rate })),
+  );
+  const vatTotal = breakdown.reduce((s, r) => s + r.amount, 0);
+  const grandTotal = subtotal + vatTotal;
 
   function variantLabel(variantId: string): string {
     const v = variants.find((x) => x.id === variantId);
@@ -665,6 +723,7 @@ function Step4Review({ customer, deliveryDate, notes, lines, variants, plants }:
           variant_id: l.variant_id,
           qty: l.qty,
           unit_price: l.unit_price,
+          vat_rate: l.vat_rate,
           line_no: i + 1,
         })),
       });
@@ -677,41 +736,122 @@ function Step4Review({ customer, deliveryDate, notes, lines, variants, plants }:
 
   return (
     <div className="px-4 mt-3 pb-32">
+      {/* Hero grand total */}
       <div className="text-center my-6">
-        <p className="text-sm text-ios-ink-sec">Σύνολο</p>
-        <p className="text-4xl font-semibold tabular-nums">{fmtEUR(total)}</p>
+        <p className="text-eyebrow" style={{ marginBottom: 6 }}>Σύνολο με ΦΠΑ</p>
+        <p className="font-display" style={{ fontSize: 48, lineHeight: 1, color: 'var(--sage-800)', fontWeight: 500 }}>
+          {fmtEUR(grandTotal)}
+        </p>
       </div>
 
-      <div className="bg-white rounded-xl p-4 space-y-2">
+      {/* Summary card */}
+      <div className="bg-white rounded-xl p-4 space-y-2 shadow-card" style={{ boxShadow: 'var(--shadow-card)' }}>
         <Row label="Πελάτης" value={customer.trading_name || customer.legal_name} />
         <Row label="Παράδοση" value={fmtLongDate(deliveryDate)} />
         <Row label="Γραμμές" value={String(lines.length)} />
       </div>
 
-      <ul className="mt-3 bg-white rounded-xl divide-y divide-gray-100">
-        {lines.map((l) => (
-          <li key={l.variant_id} className="px-4 py-3 flex items-center justify-between">
-            <div className="min-w-0">
-              <p className="font-medium truncate">{variantLabel(l.variant_id)}</p>
-              <p className="text-xs text-ios-ink-sec">
-                {l.qty} × {fmtEUR(l.unit_price)}
-              </p>
-            </div>
-            <span className="tabular-nums font-medium">{fmtEUR(l.qty * l.unit_price)}</span>
-          </li>
-        ))}
-      </ul>
+      {/* Totals breakdown card */}
+      <div
+        className="mt-3 bg-white rounded-xl p-4"
+        style={{ boxShadow: 'var(--shadow-card)' }}
+      >
+        <div className="folio" style={{ marginBottom: 10 }}><span>Τιμολόγηση</span></div>
 
-      <div className="fixed bottom-0 inset-x-0 bg-white border-t border-gray-200 pb-safe p-4">
+        <BreakdownRow label="Υποσύνολο" value={fmtEUR(subtotal)} />
+        {breakdown.map((row) => (
+          <BreakdownRow
+            key={row.rate}
+            label={VAT_LABEL[row.rate]}
+            value={fmtEUR(row.amount)}
+            sub={`επί ${fmtEUR(row.net)}`}
+          />
+        ))}
+        <div className="hairline" style={{ margin: '10px 0 8px' }} />
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+          <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--sage-800)' }}>Σύνολο</span>
+          <span className="font-mono-meta" style={{ fontSize: 18, fontWeight: 500, color: 'var(--sage-800)' }}>
+            {fmtEUR(grandTotal)}
+          </span>
+        </div>
+      </div>
+
+      {/* Lines preview */}
+      <div
+        className="mt-3 bg-white rounded-xl overflow-hidden"
+        style={{ boxShadow: 'var(--shadow-card)' }}
+      >
+        {lines.map((l, i) => (
+          <div key={l.variant_id}>
+            {i > 0 && <div className="hairline" style={{ margin: '0 16px' }} />}
+            <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 10 }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <p
+                  className="font-display"
+                  style={{ fontStyle: 'italic', fontSize: 14, fontWeight: 500 }}
+                >
+                  {prettyScientificName(variantLabel(l.variant_id).split(' · ')[0]) || variantLabel(l.variant_id)}
+                </p>
+                <p
+                  className="font-mono-meta"
+                  style={{
+                    fontSize: 10,
+                    color: 'var(--ink-500)',
+                    marginTop: 2,
+                    letterSpacing: '0.05em',
+                    textTransform: 'uppercase',
+                  }}
+                >
+                  {l.qty} × {fmtEUR(l.unit_price)} · {VAT_LABEL[l.vat_rate]}
+                </p>
+              </div>
+              <span className="font-mono-meta" style={{ fontSize: 13, fontWeight: 500 }}>
+                {fmtEUR(l.qty * l.unit_price)}
+              </span>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {notes && (
+        <div
+          className="mt-3 rounded-xl p-3"
+          style={{ background: 'var(--cream-200)' }}
+        >
+          <div className="text-eyebrow" style={{ marginBottom: 4 }}>Σημειώσεις</div>
+          <p style={{ fontSize: 13, color: 'var(--ink-700)', lineHeight: 1.5 }}>{notes}</p>
+        </div>
+      )}
+
+      <div
+        className="fixed bottom-0 inset-x-0 pb-safe"
+        style={{ background: '#fff', borderTop: '1px solid rgba(63,75,70,0.10)', padding: '14px 20px 16px' }}
+      >
         <button
           type="button"
           disabled={save.isPending}
           onClick={onSave}
-          className="w-full h-12 rounded-xl bg-ios-green text-white font-medium disabled:opacity-50"
+          className="btn-primary ios-tap"
         >
           {save.isPending ? 'Αποθήκευση…' : 'Αποθήκευση παραγγελίας'}
         </button>
       </div>
+    </div>
+  );
+}
+
+function BreakdownRow({ label, value, sub }: { label: string; value: string; sub?: string }) {
+  return (
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 4 }}>
+      <span style={{ fontSize: 13, color: 'var(--ink-500)' }}>
+        {label}
+        {sub && (
+          <span style={{ marginLeft: 6, fontSize: 10, color: 'var(--ink-300)' }}>{sub}</span>
+        )}
+      </span>
+      <span className="font-mono-meta" style={{ fontSize: 13, color: 'var(--ink-700)' }}>
+        {value}
+      </span>
     </div>
   );
 }

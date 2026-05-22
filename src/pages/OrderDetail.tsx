@@ -6,6 +6,7 @@ import { useOrder, usePatchOrder } from '@/lib/queries';
 import { fmtEUR, fmtLongDate } from '@/lib/format';
 import StatusTimeline from '@/components/StatusTimeline';
 import { prettyScientificName, cleanSizeSummary } from '@/lib/plant-display';
+import { vatBreakdown, VAT_LABEL } from '@/lib/vat';
 import type { OrderStatus, OrderLineEnriched, OrderDetail as OrderDetailT } from '@/types';
 
 const STATUS_NEXT: Partial<Record<OrderStatus, OrderStatus[]>> = {
@@ -73,7 +74,13 @@ export default function OrderDetail() {
   const customerLegal = customer && customer.trading_name && customer.legal_name !== customer.trading_name
     ? customer.legal_name
     : null;
-  const total = lines.reduce((s, l) => s + lineSubtotal(l), 0);
+  // Subtotal (net) + VAT breakdown + grand total (gross)
+  const subtotal = lines.reduce((s, l) => s + lineSubtotal(l), 0);
+  const breakdown = vatBreakdown(
+    lines.map((l) => ({ net: lineSubtotal(l), vat_rate: l.vat_rate ?? 19 })),
+  );
+  const vatTotal = breakdown.reduce((s, r) => s + r.amount, 0);
+  const grandTotal = subtotal + vatTotal;
 
   async function changeStatus(next: OrderStatus) {
     try {
@@ -131,7 +138,7 @@ export default function OrderDetail() {
         <StatusTimeline current={order.status} />
       </section>
 
-      {/* Summary card */}
+      {/* Delivery card */}
       <section style={{ padding: '18px 20px 0' }}>
         <div
           style={{
@@ -139,23 +146,53 @@ export default function OrderDetail() {
             borderRadius: 16,
             boxShadow: 'var(--shadow-card)',
             padding: 16,
-            display: 'flex',
-            alignItems: 'stretch',
           }}
         >
-          <div style={{ flex: 1 }}>
-            <div className="text-eyebrow" style={{ marginBottom: 6 }}>Παράδοση</div>
-            <p style={{ fontSize: 15, fontWeight: 500 }}>{fmtLongDate(order.delivery_date)}</p>
+          <div className="text-eyebrow" style={{ marginBottom: 6 }}>Παράδοση</div>
+          <p style={{ fontSize: 15, fontWeight: 500 }}>{fmtLongDate(order.delivery_date)}</p>
+        </div>
+      </section>
+
+      {/* Totals breakdown card */}
+      <section style={{ padding: '12px 20px 0' }}>
+        <div
+          style={{
+            background: '#fff',
+            borderRadius: 16,
+            boxShadow: 'var(--shadow-card)',
+            padding: 16,
+          }}
+        >
+          <div className="folio" style={{ marginBottom: 10 }}><span>Τιμολόγηση</span></div>
+
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
+            <span style={{ fontSize: 13, color: 'var(--ink-500)' }}>Υποσύνολο</span>
+            <span className="font-mono-meta" style={{ fontSize: 13, color: 'var(--ink-700)' }}>
+              {fmtEUR(subtotal)}
+            </span>
           </div>
-          <div className="vhairline" style={{ margin: '0 12px' }} />
-          <div style={{ textAlign: 'right' }}>
-            <div className="text-eyebrow" style={{ marginBottom: 6 }}>Σύνολο</div>
-            <p
-              className="font-mono-meta"
-              style={{ fontSize: 22, fontWeight: 500, color: 'var(--sage-800)' }}
+          {breakdown.map((row) => (
+            <div
+              key={row.rate}
+              style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}
             >
-              {fmtEUR(total)}
-            </p>
+              <span style={{ fontSize: 13, color: 'var(--ink-500)' }}>
+                {VAT_LABEL[row.rate]}
+                <span style={{ marginLeft: 6, fontSize: 10, color: 'var(--ink-300)' }}>
+                  επί {fmtEUR(row.net)}
+                </span>
+              </span>
+              <span className="font-mono-meta" style={{ fontSize: 13, color: 'var(--ink-700)' }}>
+                {fmtEUR(row.amount)}
+              </span>
+            </div>
+          ))}
+          <div className="hairline" style={{ margin: '10px 0 8px' }} />
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+            <span style={{ fontSize: 14, fontWeight: 500, color: 'var(--sage-800)' }}>Σύνολο</span>
+            <span className="font-mono-meta" style={{ fontSize: 20, fontWeight: 500, color: 'var(--sage-800)' }}>
+              {fmtEUR(grandTotal)}
+            </span>
           </div>
         </div>
       </section>
