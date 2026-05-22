@@ -1,10 +1,17 @@
 import { Link, useNavigate } from 'react-router-dom';
-import { Plus, LogOut, ChevronRight } from 'lucide-react';
+import { Plus, LogOut } from 'lucide-react';
 import { useOrders, useCustomers } from '@/lib/queries';
 import { fmtShortDate } from '@/lib/format';
 import { logout, getUser } from '@/lib/auth';
 import StatusBadge from '@/components/StatusBadge';
 import BottomNav from '@/components/BottomNav';
+
+function todayHeader(): { day: string; date: string } {
+  const d = new Date();
+  const day = d.toLocaleDateString('el-GR', { weekday: 'long' });
+  const date = d.toLocaleDateString('el-GR', { day: 'numeric', month: 'long' });
+  return { day: day.charAt(0).toUpperCase() + day.slice(1), date };
+}
 
 export default function Home() {
   const navigate = useNavigate();
@@ -12,7 +19,17 @@ export default function Home() {
   const { data: orders = [], isLoading } = useOrders();
   const { data: customers = [] } = useCustomers();
 
-  const recent = orders.slice(0, 10);
+  const recent = orders.slice(0, 5);
+  const todayISO = new Date().toISOString().slice(0, 10);
+  const preparingNow = orders.filter((o) => o.status === 'PREPARING').length;
+  const todayDeliveries = orders.filter((o) => o.delivery_date === todayISO).length;
+  const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate() + 1);
+  const tomorrowDeliveries = orders.filter(
+    (o) => o.delivery_date === tomorrow.toISOString().slice(0, 10),
+  ).length;
+
+  const { day, date } = todayHeader();
+  const firstName = (user?.name ?? user?.email ?? '').split(/[ @]/)[0];
 
   function customerLabel(id: string): string {
     const c = customers.find((x) => x.id === id);
@@ -26,65 +43,178 @@ export default function Home() {
 
   return (
     <div className="min-h-full pb-24">
-      <header className="px-4 pt-safe pt-4 pb-2 flex items-center justify-between">
+      <header
+        className="pt-safe"
+        style={{
+          padding: '14px 20px 0',
+          display: 'flex',
+          alignItems: 'flex-start',
+          justifyContent: 'space-between',
+        }}
+      >
         <div>
-          <p className="text-sm text-ios-ink-sec">Καλώς ήρθες</p>
-          <h1 className="text-2xl font-semibold">{user?.name ?? user?.email}</h1>
+          <div className="text-eyebrow" style={{ marginBottom: 4 }}>
+            {day} · {date}
+          </div>
+          <h1
+            className="font-display"
+            style={{ fontSize: 30, lineHeight: 1.05, color: 'var(--ink-900)', fontWeight: 500 }}
+          >
+            Καλώς ήρθες,{' '}
+            <span style={{ fontStyle: 'italic', color: 'var(--sage-700)' }}>{firstName}</span>
+          </h1>
         </div>
         <button
           type="button"
           onClick={onLogout}
           aria-label="Αποσύνδεση"
-          className="p-2 -m-2 text-ios-ink-sec"
+          className="ios-tap"
+          style={{
+            width: 38, height: 38, borderRadius: 999,
+            background: 'rgba(63,75,70,0.06)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            color: 'var(--ink-500)',
+          }}
         >
-          <LogOut className="w-5 h-5" />
+          <LogOut size={16} />
         </button>
       </header>
 
-      <div className="px-4 mt-4">
-        <Link
-          to="/orders/new"
-          className="flex items-center justify-center gap-2 w-full h-14 rounded-xl bg-ios-green text-white text-lg font-medium"
-        >
-          <Plus className="w-6 h-6" />
+      {/* Stats card */}
+      <div
+        style={{
+          margin: '20px 20px 0',
+          background: '#fff',
+          borderRadius: 16,
+          boxShadow: 'var(--shadow-card)',
+          padding: 18,
+          display: 'flex',
+          alignItems: 'stretch',
+        }}
+      >
+        <StatCol num={todayDeliveries} label="Σήμερα" sub="παραδόσεις" />
+        <div className="vhairline" style={{ margin: '0 8px' }} />
+        <StatCol num={preparingNow} label="Ετοιμασία" sub="τώρα" accent="var(--st-preparing)" />
+        <div className="vhairline" style={{ margin: '0 8px' }} />
+        <StatCol num={tomorrowDeliveries} label="Αύριο" sub="παραδόσεις" />
+      </div>
+
+      {/* New order CTA */}
+      <div style={{ padding: '20px 20px 0' }}>
+        <Link to="/orders/new" className="btn-primary ios-tap" style={{ height: 60, fontSize: 17 }}>
+          <Plus size={20} color="var(--cream-50)" />
           Νέα Παραγγελία
         </Link>
       </div>
 
-      <section className="px-4 mt-6">
-        <h2 className="text-sm font-medium text-ios-ink-sec uppercase tracking-wide mb-2">
-          Πρόσφατες παραγγελίες
-        </h2>
+      {/* Recent orders */}
+      <section style={{ padding: '28px 20px 0' }}>
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'baseline',
+            justifyContent: 'space-between',
+            marginBottom: 12,
+          }}
+        >
+          <div className="folio"><span>Πρόσφατες</span></div>
+          <Link
+            to="/orders"
+            style={{ fontSize: 12, color: 'var(--sage-700)', fontWeight: 500 }}
+          >
+            Όλες →
+          </Link>
+        </div>
+
         {isLoading ? (
-          <p className="text-ios-ink-sec text-sm">Φόρτωση…</p>
+          <p className="text-ink-500 text-sm">Φόρτωση…</p>
         ) : recent.length === 0 ? (
-          <p className="text-ios-ink-sec text-sm">Καμία παραγγελία ακόμη.</p>
+          <p className="text-ink-500 text-sm">Καμία παραγγελία ακόμη.</p>
         ) : (
-          <ul className="bg-white rounded-xl divide-y divide-gray-100">
-            {recent.map((o) => (
-              <li key={o.id}>
-                <Link
-                  to={`/orders/${o.id}`}
-                  className="flex items-center justify-between px-4 py-3"
+          <div
+            style={{
+              background: '#fff',
+              borderRadius: 16,
+              boxShadow: 'var(--shadow-card)',
+              overflow: 'hidden',
+            }}
+          >
+            {recent.map((o, i) => (
+              <Link key={o.id} to={`/orders/${o.id}`}>
+                {i > 0 && <div className="hairline" style={{ margin: '0 16px' }} />}
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 10,
+                    padding: '14px 16px',
+                  }}
                 >
-                  <div className="min-w-0">
-                    <p className="font-medium truncate">{customerLabel(o.customer_id)}</p>
-                    <p className="text-xs text-ios-ink-sec">
-                      {o.order_number} · παράδοση {fmtShortDate(o.delivery_date)}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <p
+                      style={{
+                        fontWeight: 500,
+                        fontSize: 15,
+                        color: 'var(--ink-900)',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {customerLabel(o.customer_id)}
+                    </p>
+                    <p
+                      className="font-mono-meta"
+                      style={{
+                        fontSize: 11,
+                        color: 'var(--ink-500)',
+                        marginTop: 3,
+                        letterSpacing: '0.02em',
+                      }}
+                    >
+                      {o.order_number} · {fmtShortDate(o.delivery_date)}
                     </p>
                   </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <StatusBadge status={o.status} />
-                    <ChevronRight className="w-4 h-4 text-ios-ink-sec" />
-                  </div>
-                </Link>
-              </li>
+                  <StatusBadge status={o.status} />
+                </div>
+              </Link>
             ))}
-          </ul>
+          </div>
         )}
       </section>
 
       <BottomNav />
+    </div>
+  );
+}
+
+function StatCol({
+  num,
+  label,
+  sub,
+  accent,
+}: {
+  num: number;
+  label: string;
+  sub: string;
+  accent?: string;
+}) {
+  return (
+    <div style={{ flex: 1, padding: '0 4px' }}>
+      <div
+        className="font-mono-meta"
+        style={{
+          fontSize: 26,
+          fontWeight: 500,
+          lineHeight: 1,
+          color: accent || 'var(--ink-900)',
+          marginBottom: 8,
+        }}
+      >
+        {String(num).padStart(2, '0')}
+      </div>
+      <div style={{ fontSize: 12, color: 'var(--ink-900)', fontWeight: 500 }}>{label}</div>
+      <div style={{ fontSize: 11, color: 'var(--ink-500)', marginTop: 1 }}>{sub}</div>
     </div>
   );
 }

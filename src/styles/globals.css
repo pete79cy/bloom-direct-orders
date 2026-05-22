@@ -1,6 +1,8 @@
-/* Fraunces — display serif with Greek glyphs. Used sparingly for moments of character
-   (brand title, sheet headings). Body keeps the native iOS/Android system stack. */
-@import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,400&display=swap');
+/* Bloom Orders — Refined Botanical / Editorial Herbarium design tokens.
+   Display: Fraunces (Greek + italic for scientific names)
+   Meta:    JetBrains Mono (order numbers, sizes, prices, dates)
+   UI:      Native system stack (fast Greek render) */
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,400;1,9..144,500&family=JetBrains+Mono:wght@400;500&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -10,75 +12,55 @@
   :root {
     color-scheme: light;
 
-    /* ─── Botanical Refined palette ─────────────────────────────── */
+    /* Sage — primary brand */
     --sage-50:  #F4F7F3;
     --sage-100: #E6EEE2;
     --sage-200: #C8D8C0;
     --sage-300: #9DB995;
     --sage-400: #6F9468;
     --sage-500: #4E7549;
-    --sage-600: #3F6B5C;   /* primary brand */
+    --sage-600: #3F6B5C;
     --sage-700: #2F4F44;
     --sage-800: #1E3329;
 
+    /* Cream — surfaces */
     --cream-50:  #FDFCF8;
-    --cream-100: #FBFAF6;   /* surface */
+    --cream-100: #FBFAF6;
     --cream-200: #F4F1E8;
     --cream-300: #E8E3D2;
 
-    --ink-900: #1B1F1C;     /* warmer than pure black */
+    /* Ink — text */
+    --ink-900: #1B1F1C;
     --ink-700: #3D4842;
     --ink-500: #6F7A73;
     --ink-300: #A8B0AA;
+    --ink-100: #D4D9D2;
 
-    --accent-clay:   #B3553D;   /* used very sparingly — destructive/alerts */
-    --accent-honey:  #C68E3B;   /* highlights */
-  }
+    /* Accents */
+    --clay:  #B3553D;
+    --honey: #C68E3B;
+    --moss:  #5C7A3E;
 
-  html, body, #root {
-    height: 100%;
-    background: var(--cream-100);
-    color: var(--ink-900);
-    -webkit-font-smoothing: antialiased;
-    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
-    font-feature-settings: "ss01", "cv11";
-  }
-  body { overscroll-behavior-y: contain; }
+    /* Status colors (semantic) */
+    --st-pending:   #C68E3B;
+    --st-preparing: #5C7A3E;
+    --st-ready:     #3F6B5C;
+    --st-partial:   #6F7A73;
+    --st-delivered: #2F4F44;
+    --st-invoiced:  #1E3329;
+    --st-cancelled: #B3553D;
 
-  /* Heading display class — Fraunces with optical-size for true editorial feel */
-  .font-display {
-    font-family: 'Fraunces', 'Cormorant Garamond', Georgia, serif;
-    font-feature-settings: "ss01", "lnum";
-    letter-spacing: -0.01em;
-  }
+    /* Fonts */
+    --font-display: 'Fraunces', 'Cormorant Garamond', Georgia, serif;
+    --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
+    --font-mono: 'JetBrains Mono', ui-monospace, "SF Mono", Menlo, monospace;
 
-  /* Native form controls inherit the body color so they don't look anaemic on
-     iOS where the browser darkens placeholder text. */
-  input, textarea, select, button { font-family: inherit; color: inherit; }
-}
+    /* Shadows */
+    --shadow-card: 0 1px 2px rgba(31, 51, 41, 0.04), 0 4px 16px -8px rgba(31, 51, 41, 0.08);
+    --shadow-sheet: 0 -8px 32px -8px rgba(31, 51, 41, 0.22);
+    --shadow-cta: 0 8px 24px -10px rgba(63, 107, 92, 0.55);
 
-@layer utilities {
-  .pt-safe { padding-top: env(safe-area-inset-top); }
-  .pb-safe { padding-bottom: env(safe-area-inset-bottom); }
-
-  /* Subtle paper-grain backdrop for hero surfaces. Single SVG, no asset cost. */
-  .bg-paper {
-    background-color: var(--cream-100);
-    background-image:
-      radial-gradient(rgba(63, 107, 92, 0.04) 1px, transparent 1px),
-      radial-gradient(rgba(63, 107, 92, 0.025) 1px, transparent 1px);
-    background-size: 18px 18px, 9px 9px;
-    background-position: 0 0, 9px 9px;
-  }
-}
-
-/* ──────────────────────────────────────────────────────────────────
-   iOS-style mobile shell tokens + primitives
-   Ported from bloom-crm/src/index.css — overridden here to use the
-   sage/cream palette instead of bloom-crm's defaults.
-   ────────────────────────────────────────────────────────────────── */
-@layer base {
-  :root {
+    /* iOS mobile shell tokens */
     --ios-bg-grouped: var(--cream-100);
     --ios-bg-card: #FFFFFF;
     --ios-bg-elev: #FFFFFF;
@@ -91,22 +73,144 @@
     --ios-fill-2: rgba(120,120,128,0.16);
     --ios-fill-3: rgba(120,120,128,0.10);
     --ios-fill-4: rgba(120,120,128,0.06);
-    /* Brand — sage instead of harsh iOS green */
-    --ios-brand: var(--sage-600);
+    --ios-brand: var(--sage-700);
 
     --ease-out-strong: cubic-bezier(0.23, 1, 0.32, 1);
     --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
   }
+
+  html, body, #root {
+    height: 100%;
+    background: var(--cream-100);
+    color: var(--ink-900);
+    -webkit-font-smoothing: antialiased;
+    font-family: var(--font-sans);
+    font-feature-settings: "ss01", "cv11";
+    letter-spacing: -0.005em;
+  }
+  body { overscroll-behavior-y: contain; }
+
+  input, textarea, select, button { font-family: inherit; color: inherit; }
+}
+
+@layer utilities {
+  .pt-safe { padding-top: env(safe-area-inset-top); }
+  .pb-safe { padding-bottom: env(safe-area-inset-bottom); }
+
+  /* Subtle paper-grain backdrop for hero surfaces */
+  .bg-paper {
+    background-color: var(--cream-100);
+    background-image:
+      radial-gradient(rgba(63, 107, 92, 0.045) 1px, transparent 1px),
+      radial-gradient(rgba(63, 107, 92, 0.025) 1px, transparent 1px);
+    background-size: 18px 18px, 9px 9px;
+    background-position: 0 0, 9px 9px;
+  }
+
+  /* Striped plant tile — image-placeholder pattern with SKU label */
+  .plant-tile {
+    background:
+      repeating-linear-gradient(45deg,
+        rgba(63,107,92,0.10) 0 2px, transparent 2px 7px),
+      var(--sage-100);
+  }
+
+  .font-display {
+    font-family: var(--font-display);
+    font-feature-settings: "ss01", "lnum";
+    letter-spacing: -0.015em;
+  }
+  .font-mono-meta {
+    font-family: var(--font-mono);
+    letter-spacing: 0;
+    font-feature-settings: normal;
+  }
+  .text-eyebrow {
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--ink-500);
+  }
 }
 
 @layer components {
+  /* Hairline divider (use as <div className="hairline" />) */
+  .hairline { height: 1px; background: rgba(63,75,70,0.08); }
+  .vhairline { width: 1px; background: rgba(63,75,70,0.10); }
+
+  /* Folio header — uppercase tracked label + optional monospace counter */
+  .folio {
+    display: flex; align-items: center; gap: 10px;
+    font-size: 10px; font-weight: 500; letter-spacing: 0.22em;
+    text-transform: uppercase; color: var(--ink-500);
+  }
+  .folio-num {
+    font-family: var(--font-mono); letter-spacing: 0;
+    font-size: 10px; color: var(--ink-300);
+  }
+
+  /* Status pill with semantic color */
+  .status-pill {
+    display: inline-flex; align-items: center; gap: 6px;
+    height: 22px; padding: 0 9px 0 8px;
+    border-radius: 999px;
+    font-size: 11px; font-weight: 500; letter-spacing: 0.02em;
+    background: rgba(63,75,70,0.06);
+    color: var(--ink-700);
+    white-space: nowrap;
+  }
+  .status-pill::before {
+    content: ''; width: 6px; height: 6px; border-radius: 99px;
+    background: currentColor;
+  }
+  .status-pending   { color: var(--st-pending);   background: rgba(198,142,59,0.10); }
+  .status-preparing { color: var(--st-preparing); background: rgba(92,122,62,0.10); }
+  .status-ready     { color: var(--st-ready);     background: rgba(63,107,92,0.10); }
+  .status-partial   { color: var(--st-partial);   background: rgba(111,122,115,0.10); }
+  .status-delivered { color: var(--st-delivered); background: rgba(47,79,68,0.12); }
+  .status-invoiced  { color: #fff;                background: var(--st-invoiced); }
+  .status-cancelled { color: var(--st-cancelled); background: rgba(179,85,61,0.10); }
+
+  /* Primary CTA — sage with shadow */
+  .btn-primary {
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    width: 100%; height: 52px; border-radius: 14px;
+    background: var(--sage-700); color: var(--cream-50);
+    font-size: 16px; font-weight: 500; letter-spacing: 0.005em;
+    box-shadow: var(--shadow-cta);
+    transition: transform 160ms var(--ease-out-strong), opacity 160ms var(--ease-out-strong);
+  }
+  .btn-primary:active { transform: scale(0.98); opacity: 0.92; }
+  .btn-primary:disabled { opacity: 0.5; box-shadow: none; }
+
+  .btn-secondary {
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    width: 100%; height: 48px; border-radius: 14px;
+    background: #fff; color: var(--sage-700);
+    font-size: 15px; font-weight: 500;
+    border: 1px solid rgba(63,107,92,0.20);
+  }
+
+  /* Chip — for filters and selectors */
+  .chip {
+    flex: 0 0 auto; padding: 0 14px; height: 32px;
+    border-radius: 999px; font-size: 13px; font-weight: 500;
+    background: rgba(255,255,255,0.85); color: var(--ink-700);
+    border: 1px solid rgba(63,75,70,0.10);
+    display: inline-flex; align-items: center; gap: 6px;
+  }
+  .chip-active {
+    background: var(--sage-700); color: var(--cream-50); border-color: var(--sage-700);
+  }
+
+  /* iOS shell wrapper (kept for MobileSheet portal) */
   .ios-shell {
     background: var(--ios-bg-grouped);
     color: var(--ios-ink);
     -webkit-font-smoothing: antialiased;
     min-height: 100vh;
   }
-
   .ios-tap {
     transition: transform 160ms var(--ease-out-strong), opacity 160ms var(--ease-out-strong);
   }

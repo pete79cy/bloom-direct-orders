@@ -3,7 +3,8 @@ import { ArrowLeft } from 'lucide-react';
 import { toast } from 'sonner';
 import { useOrder, usePatchOrder } from '@/lib/queries';
 import { fmtEUR, fmtLongDate } from '@/lib/format';
-import StatusBadge from '@/components/StatusBadge';
+import StatusTimeline from '@/components/StatusTimeline';
+import { prettyScientificName, cleanSizeSummary } from '@/lib/plant-display';
 import type { OrderStatus, OrderLineEnriched } from '@/types';
 
 const STATUS_NEXT: Partial<Record<OrderStatus, OrderStatus[]>> = {
@@ -26,10 +27,14 @@ const STATUS_LABEL_GR: Record<OrderStatus, string> = {
   CANCELLED: 'Ακυρωμένη',
 };
 
-function lineLabel(l: OrderLineEnriched): string {
-  const parts = [l.plant_scientific_name, l.size_summary].filter(Boolean);
-  return parts.length > 0 ? parts.join(' · ') : l.description ?? l.variant_id;
-}
+const ACTION_LABEL: Partial<Record<OrderStatus, string>> = {
+  PREPARING: '→ Σε ετοιμασία',
+  READY: '→ Έτοιμη',
+  PARTIALLY_DELIVERED: '→ Μερική παράδοση',
+  DELIVERED: '→ Παραδομένη',
+  INVOICED: '→ Τιμολογημένη',
+  CANCELLED: 'Ακύρωση',
+};
 
 function lineSubtotal(l: OrderLineEnriched): number {
   const discount = l.discount_pct ?? 0;
@@ -43,11 +48,14 @@ export default function OrderDetail() {
   const patch = usePatchOrder();
 
   if (isLoading || !data) {
-    return <div className="p-4 text-ios-ink-sec">Φόρτωση…</div>;
+    return <div className="p-4 text-ink-500">Φόρτωση…</div>;
   }
 
   const { order, lines, customer } = data;
   const customerName = customer?.trading_name || customer?.legal_name || 'Άγνωστος πελάτης';
+  const customerLegal = customer && customer.trading_name && customer.legal_name !== customer.trading_name
+    ? customer.legal_name
+    : null;
   const total = lines.reduce((s, l) => s + lineSubtotal(l), 0);
 
   async function changeStatus(next: OrderStatus) {
@@ -60,78 +68,188 @@ export default function OrderDetail() {
   }
 
   const nextStatuses = STATUS_NEXT[order.status] ?? [];
+  // Primary action (first non-cancellation) gets the prominent button.
+  const primaryAction = nextStatuses.find((s) => s !== 'CANCELLED');
+  const cancelAction = nextStatuses.find((s) => s === 'CANCELLED');
 
   return (
-    <div className="min-h-full pb-24">
-      <header className="px-4 pt-safe pt-4 pb-2 flex items-center gap-3">
+    <div className="min-h-full pb-10">
+      <header
+        className="pt-safe"
+        style={{ padding: '14px 20px 8px', display: 'flex', alignItems: 'center', gap: 12 }}
+      >
         <button
           type="button"
           onClick={() => navigate(-1)}
           aria-label="Πίσω"
-          className="p-2 -m-2"
+          className="ios-tap"
+          style={{
+            width: 36, height: 36, marginLeft: -8, borderRadius: 999,
+            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+            color: 'var(--ink-700)',
+          }}
         >
-          <ArrowLeft className="w-5 h-5" />
+          <ArrowLeft size={18} />
         </button>
-        <div className="min-w-0">
-          <h1 className="text-xl font-semibold truncate">{customerName}</h1>
-          <p className="text-xs text-ios-ink-sec">{order.order_number}</p>
-        </div>
-        <div className="ml-auto">
-          <StatusBadge status={order.status} />
-        </div>
       </header>
 
-      <section className="mx-4 mt-3 bg-white rounded-xl p-4 space-y-2">
-        <Row label="Παράδοση" value={fmtLongDate(order.delivery_date)} />
-        {order.notes && <Row label="Σημειώσεις" value={order.notes} />}
-        <Row label="Σύνολο" value={fmtEUR(total)} bold />
+      {/* Customer header */}
+      <section style={{ padding: '4px 20px 0' }}>
+        <div className="font-mono-meta" style={{ fontSize: 11, color: 'var(--ink-500)', letterSpacing: '0.06em' }}>
+          {order.order_number}
+        </div>
+        <h1
+          className="font-display"
+          style={{ fontSize: 26, lineHeight: 1.1, marginTop: 4, color: 'var(--ink-900)', fontWeight: 500 }}
+        >
+          {customerName}
+        </h1>
+        {customerLegal && (
+          <p style={{ fontSize: 13, color: 'var(--ink-500)', marginTop: 4 }}>{customerLegal}</p>
+        )}
       </section>
 
-      <section className="mx-4 mt-4">
-        <h2 className="text-sm font-medium text-ios-ink-sec uppercase tracking-wide mb-2">
-          Γραμμές ({lines.length})
-        </h2>
-        <ul className="bg-white rounded-xl divide-y divide-gray-100">
-          {lines.map((l) => (
-            <li key={l.id} className="px-4 py-3">
-              <p className="font-medium">{lineLabel(l)}</p>
-              <p className="text-sm text-ios-ink-sec">
-                {l.qty} × {fmtEUR(l.unit_price)} = {fmtEUR(lineSubtotal(l))}
-              </p>
-            </li>
-          ))}
-        </ul>
+      {/* Status timeline */}
+      <section style={{ padding: '20px 20px 0' }}>
+        <StatusTimeline current={order.status} />
       </section>
 
+      {/* Summary card */}
+      <section style={{ padding: '18px 20px 0' }}>
+        <div
+          style={{
+            background: '#fff',
+            borderRadius: 16,
+            boxShadow: 'var(--shadow-card)',
+            padding: 16,
+            display: 'flex',
+            alignItems: 'stretch',
+          }}
+        >
+          <div style={{ flex: 1 }}>
+            <div className="text-eyebrow" style={{ marginBottom: 6 }}>Παράδοση</div>
+            <p style={{ fontSize: 15, fontWeight: 500 }}>{fmtLongDate(order.delivery_date)}</p>
+          </div>
+          <div className="vhairline" style={{ margin: '0 12px' }} />
+          <div style={{ textAlign: 'right' }}>
+            <div className="text-eyebrow" style={{ marginBottom: 6 }}>Σύνολο</div>
+            <p
+              className="font-mono-meta"
+              style={{ fontSize: 22, fontWeight: 500, color: 'var(--sage-800)' }}
+            >
+              {fmtEUR(total)}
+            </p>
+          </div>
+        </div>
+      </section>
+
+      {/* Lines */}
+      <section style={{ padding: '20px 20px 0' }}>
+        <div className="folio" style={{ marginBottom: 10 }}>
+          <span className="folio-num">{String(lines.length).padStart(2, '0')}</span>
+          <span>γραμμές</span>
+        </div>
+        <div
+          style={{
+            background: '#fff',
+            borderRadius: 16,
+            boxShadow: 'var(--shadow-card)',
+            overflow: 'hidden',
+          }}
+        >
+          {lines.map((l, i) => {
+            const name = prettyScientificName(l.plant_scientific_name) || l.description || l.variant_id;
+            const size = cleanSizeSummary(l.size_summary);
+            return (
+              <div key={l.id}>
+                {i > 0 && <div className="hairline" style={{ margin: '0 16px' }} />}
+                <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <p
+                      className="font-display"
+                      style={{ fontStyle: 'italic', fontSize: 14, fontWeight: 500 }}
+                    >
+                      {name}
+                    </p>
+                    <p
+                      className="font-mono-meta"
+                      style={{
+                        fontSize: 10,
+                        color: 'var(--ink-500)',
+                        marginTop: 2,
+                        letterSpacing: '0.05em',
+                        textTransform: 'uppercase',
+                      }}
+                    >
+                      {size ? `${size} · ` : ''}{l.qty} × {fmtEUR(l.unit_price)}
+                    </p>
+                  </div>
+                  <span className="font-mono-meta" style={{ fontSize: 13, fontWeight: 500 }}>
+                    {fmtEUR(lineSubtotal(l))}
+                  </span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </section>
+
+      {/* Notes */}
+      {order.notes && (
+        <section style={{ padding: '20px 20px 0' }}>
+          <div className="folio" style={{ marginBottom: 8 }}><span>Σημειώσεις</span></div>
+          <p
+            style={{
+              fontSize: 13,
+              color: 'var(--ink-700)',
+              lineHeight: 1.5,
+              padding: '12px 14px',
+              background: 'var(--cream-200)',
+              borderRadius: 12,
+            }}
+          >
+            {order.notes}
+          </p>
+        </section>
+      )}
+
+      {/* Status actions */}
       {nextStatuses.length > 0 && (
-        <section className="mx-4 mt-6">
-          <h2 className="text-sm font-medium text-ios-ink-sec uppercase tracking-wide mb-2">
-            Αλλαγή status
-          </h2>
-          <div className="flex flex-wrap gap-2">
-            {nextStatuses.map((s) => (
+        <section style={{ padding: '24px 20px 0' }}>
+          <div className="folio" style={{ marginBottom: 10 }}><span>Επόμενη ενέργεια</span></div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {primaryAction && (
               <button
-                key={s}
                 type="button"
                 disabled={patch.isPending}
-                onClick={() => changeStatus(s)}
-                className="px-4 h-10 rounded-xl bg-white border border-gray-200 disabled:opacity-50"
+                onClick={() => changeStatus(primaryAction)}
+                className="btn-primary ios-tap"
+                style={{ width: 'auto', flex: 1, height: 46, fontSize: 14 }}
               >
-                → {STATUS_LABEL_GR[s]}
+                {ACTION_LABEL[primaryAction] ?? STATUS_LABEL_GR[primaryAction]}
               </button>
-            ))}
+            )}
+            {cancelAction && (
+              <button
+                type="button"
+                disabled={patch.isPending}
+                onClick={() => changeStatus(cancelAction)}
+                style={{
+                  height: 46,
+                  padding: '0 18px',
+                  borderRadius: 14,
+                  background: '#fff',
+                  border: '1px solid rgba(63,75,70,0.10)',
+                  fontSize: 14,
+                  color: 'var(--ink-700)',
+                }}
+              >
+                Ακύρωση
+              </button>
+            )}
           </div>
         </section>
       )}
-    </div>
-  );
-}
-
-function Row({ label, value, bold }: { label: string; value: string; bold?: boolean }) {
-  return (
-    <div className="flex items-baseline justify-between gap-4">
-      <span className="text-sm text-ios-ink-sec">{label}</span>
-      <span className={bold ? 'font-semibold' : ''}>{value}</span>
     </div>
   );
 }

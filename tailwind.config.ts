@@ -6,6 +6,7 @@ export default {
     extend: {
       fontFamily: {
         display: ['"Fraunces"', '"Cormorant Garamond"', 'Georgia', 'serif'],
+        mono: ['"JetBrains Mono"', 'ui-monospace', '"SF Mono"', 'Menlo', 'monospace'],
       },
       colors: {
         ios: {

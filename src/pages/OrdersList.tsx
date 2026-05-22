@@ -1,26 +1,22 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Search, ChevronRight } from 'lucide-react';
+import { Search } from 'lucide-react';
 import { useOrders, useCustomers } from '@/lib/queries';
 import { fmtShortDate } from '@/lib/format';
 import StatusBadge from '@/components/StatusBadge';
 import BottomNav from '@/components/BottomNav';
 import type { OrderStatus } from '@/types';
 
-const STATUS_FILTERS: ('ALL' | OrderStatus)[] = [
-  'ALL', 'PENDING', 'PREPARING', 'READY', 'PARTIALLY_DELIVERED', 'DELIVERED', 'INVOICED', 'CANCELLED',
+const FILTER_DEFS: { id: 'ALL' | OrderStatus; label: string }[] = [
+  { id: 'ALL', label: 'Ενεργές' },
+  { id: 'PENDING', label: 'Εκκρεμείς' },
+  { id: 'PREPARING', label: 'Ετοιμασία' },
+  { id: 'READY', label: 'Έτοιμες' },
+  { id: 'PARTIALLY_DELIVERED', label: 'Μερική' },
+  { id: 'DELIVERED', label: 'Παραδομένες' },
+  { id: 'INVOICED', label: 'Τιμολογημένες' },
+  { id: 'CANCELLED', label: 'Ακυρωμένες' },
 ];
-
-const STATUS_LABELS: Record<'ALL' | OrderStatus, string> = {
-  ALL: 'Ενεργές',
-  PENDING: 'Εκκρεμείς',
-  PREPARING: 'Σε ετοιμασία',
-  READY: 'Έτοιμες',
-  PARTIALLY_DELIVERED: 'Μερική',
-  DELIVERED: 'Παραδομένες',
-  INVOICED: 'Τιμολογημένες',
-  CANCELLED: 'Ακυρωμένες',
-};
 
 const HIDDEN_FROM_DEFAULT: OrderStatus[] = ['INVOICED', 'CANCELLED'];
 
@@ -35,6 +31,14 @@ export default function OrdersList() {
     return c?.trading_name || c?.legal_name || 'Άγνωστος πελάτης';
   };
 
+  const counts = useMemo(() => {
+    const out: Partial<Record<'ALL' | OrderStatus, number>> = {
+      ALL: orders.filter((o) => !HIDDEN_FROM_DEFAULT.includes(o.status)).length,
+    };
+    for (const o of orders) out[o.status] = (out[o.status] ?? 0) + 1;
+    return out;
+  }, [orders]);
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return orders.filter((o) => {
@@ -46,69 +50,140 @@ export default function OrdersList() {
     });
   }, [orders, customers, filter, search]);
 
+  const today = new Date().toLocaleDateString('el-GR', { day: 'numeric', month: 'long' });
+  const activeCount = counts.ALL ?? 0;
+
   return (
     <div className="min-h-full pb-24">
-      <header className="px-4 pt-safe pt-4 pb-2">
-        <h1 className="text-2xl font-semibold">Παραγγελίες</h1>
+      <header className="pt-safe" style={{ padding: '14px 20px 0' }}>
+        <div className="text-eyebrow">
+          {today} · {activeCount} ενεργές
+        </div>
+        <h1
+          className="font-display"
+          style={{ fontSize: 30, lineHeight: 1.05, marginTop: 4, fontWeight: 500 }}
+        >
+          Παραγγελίες
+        </h1>
       </header>
 
-      <div className="px-4 mt-2">
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-ios-ink-sec" />
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Αναζήτηση πελάτη ή αριθμού"
-            className="w-full h-11 pl-10 pr-4 rounded-xl bg-white border border-gray-200 text-base"
-          />
-        </div>
+      {/* Search */}
+      <div style={{ padding: '18px 20px 0', position: 'relative' }}>
+        <Search
+          className="absolute pointer-events-none"
+          style={{ left: 32, top: 32, color: 'var(--ink-500)' }}
+          size={16}
+        />
+        <input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Αναζήτηση πελάτη ή αριθμού"
+          style={{
+            width: '100%',
+            height: 44,
+            paddingLeft: 40,
+            paddingRight: 14,
+            background: 'rgba(255,255,255,0.85)',
+            border: '1px solid rgba(63,75,70,0.08)',
+            borderRadius: 12,
+            fontSize: 15,
+            outline: 'none',
+          }}
+        />
       </div>
 
-      <div className="px-4 mt-3 overflow-x-auto -mx-1">
-        <div className="flex gap-2 px-1">
-          {STATUS_FILTERS.map((s) => (
-            <button
-              key={s}
-              type="button"
-              onClick={() => setFilter(s)}
-              className={
-                'shrink-0 px-3 h-8 rounded-full text-sm border ' +
-                (filter === s
-                  ? 'bg-ios-tint text-white border-ios-tint'
-                  : 'bg-white text-ios-ink border-gray-200')
-              }
-            >
-              {STATUS_LABELS[s]}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <ul className="mt-4 mx-4 bg-white rounded-xl divide-y divide-gray-100">
-        {filtered.length === 0 ? (
-          <li className="px-4 py-8 text-center text-ios-ink-sec">Καμία παραγγελία</li>
-        ) : (
-          filtered.map((o) => (
-            <li key={o.id}>
-              <Link
-                to={`/orders/${o.id}`}
-                className="flex items-center justify-between px-4 py-3"
+      {/* Filter chips with monospace counts */}
+      <div style={{ padding: '14px 0 0' }}>
+        <div
+          style={{
+            display: 'flex',
+            gap: 8,
+            padding: '0 20px',
+            overflowX: 'auto',
+            flexWrap: 'nowrap',
+          }}
+        >
+          {FILTER_DEFS.map((f) => {
+            const count = counts[f.id] ?? 0;
+            return (
+              <button
+                key={f.id}
+                type="button"
+                onClick={() => setFilter(f.id)}
+                className={`chip ${filter === f.id ? 'chip-active' : ''}`}
               >
-                <div className="min-w-0">
-                  <p className="font-medium truncate">{customerLabel(o.customer_id)}</p>
-                  <p className="text-xs text-ios-ink-sec">
-                    {o.order_number} · {fmtShortDate(o.delivery_date)}
-                  </p>
-                </div>
-                <div className="flex items-center gap-2 shrink-0">
+                {f.label}
+                {count > 0 && (
+                  <span className="font-mono-meta" style={{ fontSize: 10, opacity: 0.7 }}>
+                    {count}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* List */}
+      <section style={{ padding: '18px 20px 0' }}>
+        <div className="folio" style={{ marginBottom: 10 }}>
+          <span className="folio-num">{String(filtered.length).padStart(2, '0')}</span>
+          <span>αποτελέσματα</span>
+        </div>
+        {filtered.length === 0 ? (
+          <p className="text-center text-ink-500 py-8 text-sm">Καμία παραγγελία</p>
+        ) : (
+          <div
+            style={{
+              background: '#fff',
+              borderRadius: 16,
+              boxShadow: 'var(--shadow-card)',
+              overflow: 'hidden',
+            }}
+          >
+            {filtered.map((o, i) => (
+              <Link key={o.id} to={`/orders/${o.id}`}>
+                {i > 0 && <div className="hairline" style={{ margin: '0 16px' }} />}
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 10,
+                    padding: '14px 16px',
+                  }}
+                >
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <p
+                      style={{
+                        fontWeight: 500,
+                        fontSize: 15,
+                        color: 'var(--ink-900)',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {customerLabel(o.customer_id)}
+                    </p>
+                    <p
+                      className="font-mono-meta"
+                      style={{
+                        fontSize: 11,
+                        color: 'var(--ink-500)',
+                        marginTop: 3,
+                        letterSpacing: '0.02em',
+                      }}
+                    >
+                      {o.order_number} · {fmtShortDate(o.delivery_date)}
+                    </p>
+                  </div>
                   <StatusBadge status={o.status} />
-                  <ChevronRight className="w-4 h-4 text-ios-ink-sec" />
                 </div>
               </Link>
-            </li>
-          ))
+            ))}
+          </div>
         )}
-      </ul>
+      </section>
 
       <BottomNav />
     </div>

@@ -1,24 +1,23 @@
-import { cn } from '@/lib/cn';
 import type { OrderStatus } from '@/types';
 
 const LABELS: Record<OrderStatus, string> = {
   PENDING: 'Εκκρεμής',
-  PREPARING: 'Σε ετοιμασία',
+  PREPARING: 'Ετοιμασία',
   READY: 'Έτοιμη',
-  PARTIALLY_DELIVERED: 'Μερική παράδοση',
+  PARTIALLY_DELIVERED: 'Μερική',
   DELIVERED: 'Παραδομένη',
   INVOICED: 'Τιμολογημένη',
   CANCELLED: 'Ακυρωμένη',
 };
 
-const STYLES: Record<OrderStatus, string> = {
-  PENDING: 'bg-orange-100 text-orange-800',
-  PREPARING: 'bg-blue-100 text-blue-800',
-  READY: 'bg-purple-100 text-purple-800',
-  PARTIALLY_DELIVERED: 'bg-yellow-100 text-yellow-800',
-  DELIVERED: 'bg-green-100 text-green-800',
-  INVOICED: 'bg-gray-100 text-gray-700',
-  CANCELLED: 'bg-red-100 text-red-800',
+const PILL_CLASS: Record<OrderStatus, string> = {
+  PENDING: 'status-pending',
+  PREPARING: 'status-preparing',
+  READY: 'status-ready',
+  PARTIALLY_DELIVERED: 'status-partial',
+  DELIVERED: 'status-delivered',
+  INVOICED: 'status-invoiced',
+  CANCELLED: 'status-cancelled',
 };
 
 interface Props {
@@ -26,16 +25,14 @@ interface Props {
   className?: string;
 }
 
+/**
+ * Status pill with a semantic color and a leading colored dot.
+ * Background is a 10% tint of the status color; the dot inherits currentColor.
+ * Spec from the design package — each status owns its own hue, all dotted.
+ */
 export default function StatusBadge({ status, className }: Props) {
-  return (
-    <span
-      className={cn(
-        'inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium',
-        STYLES[status],
-        className,
-      )}
-    >
-      {LABELS[status]}
-    </span>
-  );
+  const cls = `status-pill ${PILL_CLASS[status]} ${className ?? ''}`.trim();
+  return <span className={cls}>{LABELS[status]}</span>;
 }
+
+export { LABELS as STATUS_LABELS };

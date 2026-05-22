@@ -5,9 +5,10 @@ import {
   ArrowLeft, Search, Plus, Trash2, Tag, FileText, Edit3,
 } from 'lucide-react';
 import MobileStepper from '@/components/MobileStepper';
-import MobileSheet from '@/components/MobileSheet';
+import FullScreenSheet from '@/components/FullScreenSheet';
 import QtyStepper from '@/components/QtyStepper';
 import VariantCard from '@/components/VariantCard';
+import PlantTile from '@/components/PlantTile';
 import LeafMark from '@/components/LeafMark';
 import {
   useCustomers, usePlants, useVariants, useCustomerPrices, useCreateDirectOrder,
@@ -285,8 +286,8 @@ function Step3Lines({ customer, plants, variants, customerPrices, lines, onChang
     const { price, source } = priceForVariant(v.id, v.default_sell_price);
     const next: DraftLine = { variant_id: v.id, qty: 1, unit_price: price, price_source: source };
     onChange([...lines, next]);
-    setSheetOpen(false);
-    setQuery('');
+    // Don't close the search modal — let the user add multiple plants in
+    // a single search session. The modal is dismissed via the close button.
   }
 
   function updateLine(variantId: string, patch: Partial<DraftLine>) {
@@ -299,10 +300,41 @@ function Step3Lines({ customer, plants, variants, customerPrices, lines, onChang
 
   return (
     <div className="px-4 mt-3 pb-44">
+      {/* Customer + delivery context chip */}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 10,
+          padding: '10px 14px',
+          background: 'var(--sage-50)',
+          borderRadius: 12,
+          border: '1px solid rgba(63,107,92,0.15)',
+          marginBottom: 18,
+        }}
+      >
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <p style={{ fontSize: 13, fontWeight: 500 }}>
+            {customer.trading_name || customer.legal_name}
+          </p>
+          <p
+            className="font-mono-meta"
+            style={{ fontSize: 10, color: 'var(--ink-500)', marginTop: 2, letterSpacing: '0.06em', textTransform: 'uppercase' }}
+          >
+            ΠΑΡΑΓΓΕΛΙΑ ΑΠΕΥΘΕΙΑΣ
+          </p>
+        </div>
+      </div>
+
+      <div className="folio mb-2.5">
+        <span className="folio-num">{String(lines.length).padStart(2, '0')}</span>
+        <span>γραμμές</span>
+      </div>
+
       {lines.length === 0 ? (
-        <p className="text-center text-ios-ink-sec py-8">Καμία γραμμή ακόμη</p>
+        <p className="text-center text-ink-500 py-8 text-sm">Καμία γραμμή ακόμη</p>
       ) : (
-        <ul className="bg-white rounded-xl divide-y divide-gray-100">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {lines.map((l) => {
             const meta = variantsWithPlant.find((v) => v.variant.id === l.variant_id);
             return (
@@ -315,97 +347,168 @@ function Step3Lines({ customer, plants, variants, customerPrices, lines, onChang
               />
             );
           })}
-        </ul>
+        </div>
       )}
 
-      {/* Customer name hint — small label under the list */}
-      <p className="text-xs text-ios-ink-sec mt-3 text-center">
-        Πελάτης: {customer.trading_name || customer.legal_name}
-      </p>
-
-      <div className="fixed bottom-24 inset-x-4 z-20">
+      <div className="fixed bottom-[145px] inset-x-5 z-20">
         <button
           type="button"
           onClick={() => setSheetOpen(true)}
-          className="w-full h-12 rounded-xl bg-white border border-ios-tint text-ios-tint font-medium flex items-center justify-center gap-2 shadow"
+          className="btn-secondary ios-tap"
         >
-          <Plus className="w-5 h-5" />
-          Προσθήκη γραμμής
+          <Plus className="w-4 h-4" strokeWidth={1.75} color="var(--sage-700)" />
+          Προσθήκη φυτού
         </button>
       </div>
 
-      <div className="fixed bottom-0 inset-x-0 bg-white border-t border-gray-200 pb-safe p-4 z-10">
-        <div className="flex items-center justify-between mb-3">
-          <span className="text-ios-ink-sec">Σύνολο</span>
-          <span className="text-xl font-semibold">{fmtEUR(total)}</span>
+      <div
+        className="fixed bottom-0 inset-x-0 pb-safe z-10"
+        style={{ background: '#fff', borderTop: '1px solid rgba(63,75,70,0.10)', padding: '16px 20px 20px' }}
+      >
+        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 12 }}>
+          <span className="text-eyebrow">Σύνολο</span>
+          <span className="font-mono-meta" style={{ fontSize: 24, fontWeight: 500 }}>
+            {fmtEUR(total)}
+          </span>
         </div>
         <button
           type="button"
           disabled={lines.length === 0}
           onClick={onContinue}
-          className="w-full h-12 rounded-xl bg-ios-tint text-white font-medium disabled:opacity-50"
+          className="btn-primary ios-tap"
+          style={{ height: 48 }}
         >
           Συνέχεια
         </button>
       </div>
 
-      <MobileSheet open={sheetOpen} onClose={() => setSheetOpen(false)} title="Προσθήκη γραμμής">
-        <div className="px-4 pt-3 pb-4">
-          <div className="relative">
-            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-ink-300 pointer-events-none" />
-            <input
-              autoFocus
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Αναζήτηση φυτού…"
-              className="w-full h-11 pl-10 pr-10 rounded-xl bg-cream-200/60 border border-cream-300/50 text-base placeholder:text-ink-300 focus:outline-none focus:bg-white focus:border-sage-300 transition-colors"
-            />
+      <FullScreenSheet open={sheetOpen} onClose={() => { setSheetOpen(false); setQuery(''); }}>
+        {/* Header — close button + breadcrumb + display title */}
+        <div
+          className="pt-safe"
+          style={{
+            padding: '14px 16px 14px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 12,
+            borderBottom: '1px solid rgba(63,75,70,0.06)',
+          }}
+        >
+          <button
+            type="button"
+            aria-label="Κλείσιμο"
+            onClick={() => { setSheetOpen(false); setQuery(''); }}
+            className="ios-tap"
+            style={{
+              width: 36, height: 36, borderRadius: 999,
+              background: 'rgba(63,75,70,0.06)',
+              color: 'var(--ink-700)',
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+              flexShrink: 0,
+            }}
+          >
+            <svg width="14" height="14" viewBox="0 0 14 14">
+              <path d="M3 3l8 8M11 3l-8 8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+            </svg>
+          </button>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div className="text-eyebrow" style={{ fontSize: 9, marginBottom: 1 }}>
+              Βήμα 3 · Γραμμές
+            </div>
+            <h3
+              className="font-display"
+              style={{ fontStyle: 'italic', fontSize: 19, color: 'var(--sage-800)', lineHeight: 1.1 }}
+            >
+              Προσθήκη φυτού
+            </h3>
+          </div>
+        </div>
+
+        {/* Sage-bordered focused search input */}
+        <div style={{ padding: '12px 16px 0', position: 'relative' }}>
+          <Search
+            className="absolute pointer-events-none"
+            style={{ left: 30, top: 27, color: 'var(--sage-700)' }}
+            size={16}
+          />
+          <input
+            autoFocus
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Αναζήτηση φυτού…"
+            style={{
+              width: '100%', height: 46, paddingLeft: 40, paddingRight: 40,
+              background: '#fff',
+              border: '1.5px solid var(--sage-400)',
+              boxShadow: '0 0 0 4px rgba(63,107,92,0.10)',
+              borderRadius: 12, fontSize: 16, outline: 'none',
+            }}
+          />
+          {query && (
+            <button
+              type="button"
+              onClick={() => setQuery('')}
+              aria-label="Καθαρισμός"
+              style={{
+                position: 'absolute', right: 24, top: 26,
+                width: 22, height: 22, borderRadius: 999,
+                background: 'rgba(63,75,70,0.18)',
+                color: '#fff', fontSize: 12, fontWeight: 600,
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+              }}
+            >
+              ×
+            </button>
+          )}
+        </div>
+
+        {/* Folio counter row */}
+        <div style={{ padding: '14px 16px 6px' }}>
+          <div className="folio">
+            {filtered.length > 0 && (
+              <span className="folio-num">{String(filtered.length).padStart(2, '0')}</span>
+            )}
+            <span>{filtered.length > 0 ? 'αποτελέσματα' : 'πληκτρολόγησε για αναζήτηση'}</span>
             {query && (
-              <button
-                type="button"
-                onClick={() => setQuery('')}
-                aria-label="Καθαρισμός"
-                className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full bg-ink-300/30 text-white flex items-center justify-center text-xs"
-              >
-                ×
-              </button>
+              <span style={{ marginLeft: 'auto', color: 'var(--ink-300)', textTransform: 'none', letterSpacing: 0 }}>
+                για «{query}»
+              </span>
             )}
           </div>
-
-          {filtered.length > 0 && (
-            <p className="mt-3 px-1 text-[10px] uppercase tracking-[0.15em] text-ink-300">
-              {query ? `${filtered.length} αποτελέσματα` : 'Δημοφιλή φυτά'}
-            </p>
-          )}
-
-          <ul className="mt-2 max-h-[58vh] overflow-y-auto -mx-2 pr-1">
-            {filtered.length === 0 ? (
-              <li className="px-4 py-12 text-center">
-                <div className="mx-auto mb-3 text-sage-300">
-                  <LeafMark size={36} />
-                </div>
-                <p className="font-display italic text-ink-500 text-lg">Κανένα φυτό</p>
-                <p className="text-xs text-ink-300 mt-1">
-                  Δοκίμασε άλλη αναζήτηση ή επιστημονικό όνομα
-                </p>
-              </li>
-            ) : (
-              filtered.map((x) => (
-                <li key={x.variant.id}>
-                  <VariantCard
-                    variant={x.variant}
-                    plant={x.plant}
-                    customerPrice={
-                      customerPrices.find((cp) => cp.variant_id === x.variant.id)?.effective_unit_price
-                    }
-                    onAdd={() => addLine(x.variant)}
-                  />
-                </li>
-              ))
-            )}
-          </ul>
         </div>
-      </MobileSheet>
+
+        {/* Scrollable results — flex:1 so it absorbs all the space above the keyboard */}
+        <div style={{ flex: 1, overflowY: 'auto', padding: '6px 16px 24px', minHeight: 0 }}>
+          {filtered.length === 0 ? (
+            <div style={{ padding: '64px 16px', textAlign: 'center' }}>
+              <div style={{ display: 'inline-flex', color: 'var(--sage-300)', marginBottom: 12 }}>
+                <LeafMark size={48} />
+              </div>
+              <p className="font-display" style={{ fontStyle: 'italic', color: 'var(--ink-500)', fontSize: 20 }}>
+                Κανένα φυτό
+              </p>
+              <p style={{ fontSize: 13, color: 'var(--ink-300)', marginTop: 4 }}>
+                Δοκίμασε άλλη αναζήτηση
+              </p>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {filtered.map((x) => (
+                <VariantCard
+                  key={x.variant.id}
+                  variant={x.variant}
+                  plant={x.plant}
+                  customerPrice={
+                    customerPrices.find((cp) => cp.variant_id === x.variant.id)?.effective_unit_price
+                  }
+                  added={lines.some((l) => l.variant_id === x.variant.id)}
+                  onAdd={() => addLine(x.variant)}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      </FullScreenSheet>
     </div>
   );
 }
@@ -419,48 +522,85 @@ interface LineRowProps {
 
 function LineRow({ line, label, onUpdate, onRemove }: LineRowProps) {
   const [priceEdit, setPriceEdit] = useState(false);
-  // Split "Genus species · size info" so we can italicise the name only.
   const [primary, ...rest] = label.split(' · ');
   const meta = rest.join(' · ');
+  const tileLabel = primary.split(/\s+/)[0]?.slice(0, 4).toUpperCase() ?? 'PLNT';
 
   const PriceIcon =
     line.price_source === 'customer' ? Tag : line.price_source === 'override' ? Edit3 : FileText;
   const priceColor =
-    line.price_source === 'customer' ? 'text-sage-600' :
-    line.price_source === 'override' ? 'text-accent-honey' : 'text-ink-500';
+    line.price_source === 'customer' ? 'var(--sage-700)' :
+    line.price_source === 'override' ? 'var(--honey)' : 'var(--ink-500)';
+  const priceLabel =
+    line.price_source === 'customer' ? 'τιμή πελάτη' :
+    line.price_source === 'override' ? 'override' : 'βασική τιμή';
 
   return (
-    <li className="px-4 py-3">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0 flex-1">
-          <p className="font-display italic text-ink-900 text-[16px] tracking-tight truncate">
+    <div
+      style={{
+        background: '#fff',
+        borderRadius: 16,
+        padding: 14,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 12,
+        boxShadow: 'var(--shadow-card)',
+      }}
+    >
+      <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+        <PlantTile label={tileLabel} size={56} />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <p
+            className="font-display"
+            style={{ fontStyle: 'italic', fontSize: 16, fontWeight: 500, color: 'var(--ink-900)' }}
+          >
             {primary}
           </p>
           {meta && (
-            <p className="text-[11px] uppercase tracking-[0.12em] text-ink-300 mt-0.5">{meta}</p>
+            <p
+              className="font-mono-meta"
+              style={{
+                fontSize: 10,
+                color: 'var(--ink-500)',
+                marginTop: 3,
+                letterSpacing: '0.05em',
+                textTransform: 'uppercase',
+              }}
+            >
+              {meta}
+            </p>
           )}
           <button
             type="button"
             onClick={() => setPriceEdit(true)}
-            className={'mt-2 inline-flex items-center gap-1 text-sm font-medium ' + priceColor}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 5,
+              marginTop: 8,
+              color: priceColor,
+            }}
           >
-            <PriceIcon className="w-3.5 h-3.5" />
-            {fmtEUR(line.unit_price)} <span className="text-ink-300 font-normal">/ τμχ</span>
+            <PriceIcon size={11} />
+            <span className="font-mono-meta" style={{ fontSize: 11, fontWeight: 500 }}>
+              {fmtEUR(line.unit_price)}
+            </span>
+            <span style={{ fontSize: 10, opacity: 0.7 }}>· {priceLabel}</span>
           </button>
         </div>
         <button
           type="button"
           aria-label="Διαγραφή"
           onClick={onRemove}
-          className="p-2 -m-2 text-ink-300 hover:text-accent-clay transition-colors"
+          style={{ color: 'var(--ink-300)', padding: 4, marginTop: -2, flexShrink: 0 }}
         >
-          <Trash2 className="w-4 h-4" />
+          <Trash2 size={14} />
         </button>
       </div>
 
-      <div className="mt-3 flex items-center justify-between">
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <QtyStepper value={line.qty} min={1} onChange={(qty) => onUpdate({ qty })} />
-        <span className="font-medium tabular-nums text-ink-900">
+        <span className="font-mono-meta" style={{ fontSize: 15, fontWeight: 500 }}>
           {fmtEUR(line.qty * line.unit_price)}
         </span>
       </div>
@@ -484,7 +624,7 @@ function LineRow({ line, label, onUpdate, onRemove }: LineRowProps) {
           />
         </div>
       )}
-    </li>
+    </div>
   );
 }
 

@@ -53,8 +53,18 @@ export default function Login() {
           <div className="w-14 h-14 rounded-2xl bg-sage-600 flex items-center justify-center mb-4 shadow-lg shadow-sage-600/20">
             <LeafMark size={28} className="text-cream-50" />
           </div>
-          <h1 className="font-display italic text-[40px] leading-none text-sage-700 tracking-tight">
-            Bloom <span className="text-ink-900 not-italic font-medium">Orders</span>
+          <h1
+            className="font-display"
+            style={{
+              fontSize: 44,
+              lineHeight: 1,
+              color: 'var(--sage-800)',
+              fontWeight: 500,
+              letterSpacing: '-0.015em',
+            }}
+          >
+            Bloom{' '}
+            <span style={{ fontStyle: 'italic', color: 'var(--sage-700)' }}>Orders</span>
           </h1>
           <p className="text-ink-500 text-[13px] mt-2 tracking-[0.18em] uppercase">
             Pakkoutis&nbsp;·&nbsp;Nurseries

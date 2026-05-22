@@ -8,9 +8,15 @@ describe('StatusBadge', () => {
     expect(screen.getByText('Εκκρεμής')).toBeInTheDocument();
   });
 
-  it('renders DELIVERED with green styling', () => {
+  it('renders DELIVERED with the status-delivered class', () => {
     const { container } = render(<StatusBadge status="DELIVERED" />);
     const badge = container.firstChild as HTMLElement;
-    expect(badge.className).toMatch(/green/);
+    expect(badge.className).toMatch(/status-delivered/);
+  });
+
+  it('always applies the base status-pill class', () => {
+    const { container } = render(<StatusBadge status="PENDING" />);
+    const badge = container.firstChild as HTMLElement;
+    expect(badge.className).toMatch(/status-pill/);
   });
 });
