@@ -75,3 +75,82 @@ export function fallbackVariantLabel(variantCode: string | null | undefined): st
   const [firstToken] = variantCode.split('__');
   return prettyScientificName(firstToken) || 'Παραλλαγή';
 }
+
+/**
+ * Two-line plant name resolution.
+ *
+ * The card hierarchy puts the Greek common name first (it's what the user
+ * reads), with the scientific Latin name as a smaller secondary line. If
+ * no common name exists, the scientific name is promoted to primary and
+ * the secondary line is suppressed.
+ */
+export function pickPlantName(plant: {
+  scientific_name?: string | null;
+  common_name?: string | null;
+} | null | undefined): { primary: string; secondary: string | null } {
+  const common = plant?.common_name?.trim() || '';
+  const scientific = prettyScientificName(plant?.scientific_name) || '';
+  if (common && scientific && common !== scientific) {
+    return { primary: common, secondary: scientific };
+  }
+  if (common) return { primary: common, secondary: null };
+  if (scientific) return { primary: scientific, secondary: null };
+  return { primary: 'Φυτό', secondary: null };
+}
+
+/* ── Size meta builder ──────────────────────────────────────
+   Build a list of structured tokens from variant fields:
+     Pot:    "P 5L"
+     Height: "H 20–50 CM"
+     Girth:  "G 8–10 CM"
+   Skip any piece whose data is missing OR whose min/max are both 1 —
+   bloom-crm stores 1↔1 as the "we don't actually know" placeholder for
+   variants that were imported without dimensions.
+   ──────────────────────────────────────────────────────────── */
+
+interface VariantSizeFields {
+  pot_volume_l?: number | null;
+  height_min_cm?: number | null;
+  height_max_cm?: number | null;
+  girth_min_cm?: number | null;
+  girth_max_cm?: number | null;
+}
+
+function isPlaceholder(min: number | null | undefined, max: number | null | undefined): boolean {
+  // bloom-crm convention: "unknown" rows save as 1/1
+  return min === 1 && max === 1;
+}
+
+function fmtRange(prefix: string, min: number, max: number, unit: string): string {
+  return min === max ? `${prefix} ${min} ${unit}` : `${prefix} ${min}–${max} ${unit}`;
+}
+
+export function sizeDetails(v: VariantSizeFields): string[] {
+  const out: string[] = [];
+
+  if (v.pot_volume_l != null && v.pot_volume_l > 0) {
+    // Drop trailing .0 ("5L" not "5.0L")
+    const litres = Number.isInteger(v.pot_volume_l) ? v.pot_volume_l : Number(v.pot_volume_l).toFixed(1);
+    out.push(`P ${litres}L`);
+  }
+
+  if (v.height_min_cm != null && v.height_max_cm != null && !isPlaceholder(v.height_min_cm, v.height_max_cm)) {
+    out.push(fmtRange('H', v.height_min_cm, v.height_max_cm, 'CM'));
+  }
+
+  if (v.girth_min_cm != null && v.girth_max_cm != null && !isPlaceholder(v.girth_min_cm, v.girth_max_cm)) {
+    out.push(fmtRange('G', v.girth_min_cm, v.girth_max_cm, 'CM'));
+  }
+
+  return out;
+}
+
+/**
+ * Convenience: join sizeDetails() with the design-package's "·" separator.
+ * Returns null when the variant has no structural data at all (so the
+ * renderer can skip the size line entirely).
+ */
+export function sizeDetailsString(v: VariantSizeFields): string | null {
+  const parts = sizeDetails(v);
+  return parts.length > 0 ? parts.join(' · ') : null;
+}

@@ -53,6 +53,33 @@ export interface Variant {
   variant_code: string;
   size_summary: string | null;
   default_sell_price: number | null;
+  // Structural — used to build readable size meta on the client.
+  // Nullable to tolerate older rows; renderer skips missing pieces.
+  pot_volume_l?: number | null;
+  height_min_cm?: number | null;
+  height_max_cm?: number | null;
+  girth_min_cm?: number | null;
+  girth_max_cm?: number | null;
+  pcs_per_pot?: number | null;
+  plant_type?: string | null;
+  form?: string | null;
+  grade?: string | null;
+}
+
+export interface Supplier {
+  id: string;
+  name: string;
+  trading_name?: string | null;
+  country?: string | null;
+}
+
+export interface SupplierProduct {
+  id: string;
+  supplier_id: string;
+  variant_id: string;
+  supplier_sku: string;
+  supplier_name_text: string;
+  match_confidence: number;
 }
 
 // Joined/enriched line as returned by GET /api/orders/:id

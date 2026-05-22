@@ -8,6 +8,8 @@ import type {
   Variant,
   CustomerPrice,
   OrderStatus,
+  Supplier,
+  SupplierProduct,
 } from '@/types';
 
 const TEN_MIN = 10 * 60 * 1000;
@@ -48,6 +50,22 @@ export function usePlants() {
     queryKey: ['plants'],
     staleTime: TEN_MIN,
     queryFn: () => apiFetch<Plant[]>('/api/plants'),
+  });
+}
+
+export function useSuppliers() {
+  return useQuery({
+    queryKey: ['suppliers'],
+    staleTime: TEN_MIN,
+    queryFn: () => apiFetch<Supplier[]>('/api/suppliers'),
+  });
+}
+
+export function useSupplierProducts() {
+  return useQuery({
+    queryKey: ['supplier-products'],
+    staleTime: TEN_MIN,
+    queryFn: () => apiFetch<SupplierProduct[]>('/api/supplier-products'),
   });
 }
 

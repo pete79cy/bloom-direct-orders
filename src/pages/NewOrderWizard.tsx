@@ -12,10 +12,11 @@ import PlantTile from '@/components/PlantTile';
 import LeafMark from '@/components/LeafMark';
 import {
   useCustomers, usePlants, useVariants, useCustomerPrices, useCreateDirectOrder,
+  useSuppliers, useSupplierProducts,
 } from '@/lib/queries';
 import { fmtEUR, fmtLongDate, isoToday, addDays } from '@/lib/format';
 import {
-  prettyScientificName, cleanSizeSummary, fallbackVariantLabel,
+  pickPlantName, sizeDetailsString, fallbackVariantLabel,
 } from '@/lib/plant-display';
 import VatPicker from '@/components/VatPicker';
 import {
@@ -51,6 +52,23 @@ export default function NewOrderWizard() {
   const { data: plants = [] } = usePlants();
   const { data: variants = [] } = useVariants();
   const { data: customerPrices = [] } = useCustomerPrices(customer?.id);
+  const { data: suppliers = [] } = useSuppliers();
+  const { data: supplierProducts = [] } = useSupplierProducts();
+
+  // Map variant_id → supplier display name. When a variant has multiple
+  // suppliers, the highest match_confidence wins; ties broken by name.
+  // We compute once and pass down to step 3 + step 4.
+  const supplierByVariant = useMemo(() => {
+    const byId = new Map<string, string>();
+    const supplierName = new Map(suppliers.map((s) => [s.id, s.trading_name || s.name]));
+    const sorted = [...supplierProducts].sort((a, b) => b.match_confidence - a.match_confidence);
+    for (const sp of sorted) {
+      if (byId.has(sp.variant_id)) continue;
+      const name = supplierName.get(sp.supplier_id) || sp.supplier_name_text;
+      if (name) byId.set(sp.variant_id, name);
+    }
+    return byId;
+  }, [supplierProducts, suppliers]);
 
   // Re-price existing lines whenever customer prices land or change.
   useEffect(() => {
@@ -110,6 +128,7 @@ export default function NewOrderWizard() {
           plants={plants}
           variants={variants}
           customerPrices={customerPrices}
+          supplierByVariant={supplierByVariant}
           lines={lines}
           onChange={setLines}
           onContinue={() => setStep(3)}
@@ -124,6 +143,7 @@ export default function NewOrderWizard() {
           lines={lines}
           variants={variants}
           plants={plants}
+          supplierByVariant={supplierByVariant}
         />
       )}
     </div>
@@ -247,12 +267,16 @@ interface Step3Props {
   plants: Plant[];
   variants: Variant[];
   customerPrices: CustomerPrice[];
+  supplierByVariant: Map<string, string>;
   lines: DraftLine[];
   onChange: (lines: DraftLine[]) => void;
   onContinue: () => void;
 }
 
-function Step3Lines({ customer, plants, variants, customerPrices, lines, onChange, onContinue }: Step3Props) {
+function Step3Lines({
+  customer, plants, variants, customerPrices, supplierByVariant,
+  lines, onChange, onContinue,
+}: Step3Props) {
   const [sheetOpen, setSheetOpen] = useState(false);
   const [query, setQuery] = useState('');
 
@@ -260,19 +284,30 @@ function Step3Lines({ customer, plants, variants, customerPrices, lines, onChang
     () =>
       variants.map((v) => {
         const p = plants.find((x) => x.id === v.plant_id);
-        const prettyName = prettyScientificName(p?.scientific_name);
-        const cleanedSize = cleanSizeSummary(v.size_summary) ?? '';
+        const { primary, secondary } = pickPlantName(p ?? null);
+        const cleanedSize = sizeDetailsString({
+          pot_volume_l: v.pot_volume_l,
+          height_min_cm: v.height_min_cm,
+          height_max_cm: v.height_max_cm,
+          girth_min_cm: v.girth_min_cm,
+          girth_max_cm: v.girth_max_cm,
+        }) ?? '';
+        const supplier = supplierByVariant.get(v.id) ?? null;
         return {
           variant: v,
           plant: p,
-          label: [prettyName, cleanedSize].filter(Boolean).join(' · ') ||
-                 fallbackVariantLabel(v.variant_code),
-          // Keep variant_code in the search blob so SKU lookups still work,
-          // but never render it.
-          searchBlob: `${prettyName} ${p?.common_name ?? ''} ${v.variant_code} ${cleanedSize}`.toLowerCase(),
+          supplier,
+          // Stored label used by LineRow (added lines) — common first,
+          // then scientific, then size meta. Falls back if no plant data.
+          label: [primary === 'Φυτό' ? fallbackVariantLabel(v.variant_code) : primary, secondary, cleanedSize]
+            .filter(Boolean)
+            .join(' · '),
+          // Search includes Greek + Latin + SKU + size + supplier so any
+          // search term hits.
+          searchBlob: `${primary} ${secondary ?? ''} ${p?.common_name ?? ''} ${v.variant_code} ${cleanedSize} ${supplier ?? ''}`.toLowerCase(),
         };
       }),
-    [variants, plants],
+    [variants, plants, supplierByVariant],
   );
 
   const filtered = useMemo(() => {
@@ -362,7 +397,9 @@ function Step3Lines({ customer, plants, variants, customerPrices, lines, onChang
               <LineRow
                 key={l.variant_id}
                 line={l}
-                label={meta?.label ?? l.variant_id}
+                plant={meta?.plant}
+                supplier={meta?.supplier ?? null}
+                variant={meta?.variant}
                 onUpdate={(patch) => updateLine(l.variant_id, patch)}
                 onRemove={() => removeLine(l.variant_id)}
               />
@@ -545,6 +582,7 @@ function Step3Lines({ customer, plants, variants, customerPrices, lines, onChang
                   key={x.variant.id}
                   variant={x.variant}
                   plant={x.plant}
+                  supplier={x.supplier}
                   customerPrice={
                     customerPrices.find((cp) => cp.variant_id === x.variant.id)?.effective_unit_price
                   }
@@ -562,16 +600,30 @@ function Step3Lines({ customer, plants, variants, customerPrices, lines, onChang
 
 interface LineRowProps {
   line: DraftLine;
-  label: string;
+  plant: Plant | undefined;
+  variant: Variant | undefined;
+  supplier: string | null;
   onUpdate: (patch: Partial<DraftLine>) => void;
   onRemove: () => void;
 }
 
-function LineRow({ line, label, onUpdate, onRemove }: LineRowProps) {
+function LineRow({ line, plant, variant, supplier, onUpdate, onRemove }: LineRowProps) {
   const [priceEdit, setPriceEdit] = useState(false);
-  const [primary, ...rest] = label.split(' · ');
-  const meta = rest.join(' · ');
-  const tileLabel = primary.split(/\s+/)[0]?.slice(0, 4).toUpperCase() ?? 'PLNT';
+
+  const { primary, secondary } = pickPlantName(plant ?? null);
+  const displayPrimary = primary === 'Φυτό'
+    ? fallbackVariantLabel(variant?.variant_code)
+    : primary;
+  const size = variant ? sizeDetailsString({
+    pot_volume_l: variant.pot_volume_l,
+    height_min_cm: variant.height_min_cm,
+    height_max_cm: variant.height_max_cm,
+    girth_min_cm: variant.girth_min_cm,
+    girth_max_cm: variant.girth_max_cm,
+  }) : null;
+  const tileLabel = (plant?.scientific_name?.split(/\s+/)[0] ?? variant?.variant_code.split('__')[0] ?? 'PLNT')
+    .slice(0, 4)
+    .toUpperCase();
 
   const PriceIcon =
     line.price_source === 'customer' ? Tag : line.price_source === 'override' ? Edit3 : FileText;
@@ -597,24 +649,68 @@ function LineRow({ line, label, onUpdate, onRemove }: LineRowProps) {
       <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
         <PlantTile label={tileLabel} size={56} />
         <div style={{ flex: 1, minWidth: 0 }}>
+          {/* Primary — Greek common name (or promoted scientific) */}
           <p
-            className="font-display"
-            style={{ fontStyle: 'italic', fontSize: 16, fontWeight: 500, color: 'var(--ink-900)' }}
+            style={{
+              fontSize: 16,
+              fontWeight: 500,
+              color: 'var(--ink-900)',
+              lineHeight: 1.25,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}
           >
-            {primary}
+            {displayPrimary}
           </p>
-          {meta && (
+          {/* Secondary — scientific Latin in italic serif */}
+          {secondary && (
+            <p
+              className="font-display"
+              style={{
+                fontStyle: 'italic',
+                fontSize: 12,
+                color: 'var(--ink-500)',
+                marginTop: 1,
+                lineHeight: 1.3,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {secondary}
+            </p>
+          )}
+          {/* Supplier — eyebrow */}
+          {supplier && (
+            <p
+              className="text-eyebrow"
+              style={{
+                fontSize: 9,
+                marginTop: 5,
+                color: 'var(--ink-300)',
+                letterSpacing: '0.15em',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {supplier}
+            </p>
+          )}
+          {/* Size — mono uppercase */}
+          {size && (
             <p
               className="font-mono-meta"
               style={{
                 fontSize: 10,
                 color: 'var(--ink-500)',
-                marginTop: 3,
+                marginTop: supplier ? 2 : 5,
                 letterSpacing: '0.05em',
                 textTransform: 'uppercase',
               }}
             >
-              {meta}
+              {size}
             </p>
           )}
           <button
@@ -690,9 +786,12 @@ interface Step4Props {
   lines: DraftLine[];
   variants: Variant[];
   plants: Plant[];
+  supplierByVariant: Map<string, string>;
 }
 
-function Step4Review({ customer, deliveryDate, notes, lines, variants, plants }: Step4Props) {
+function Step4Review({
+  customer, deliveryDate, notes, lines, variants, plants, supplierByVariant,
+}: Step4Props) {
   const navigate = useNavigate();
   const save = useCreateDirectOrder();
 
@@ -781,36 +880,67 @@ function Step4Review({ customer, deliveryDate, notes, lines, variants, plants }:
         className="mt-3 bg-white rounded-xl overflow-hidden"
         style={{ boxShadow: 'var(--shadow-card)' }}
       >
-        {lines.map((l, i) => (
-          <div key={l.variant_id}>
-            {i > 0 && <div className="hairline" style={{ margin: '0 16px' }} />}
-            <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 10 }}>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <p
-                  className="font-display"
-                  style={{ fontStyle: 'italic', fontSize: 14, fontWeight: 500 }}
-                >
-                  {prettyScientificName(variantLabel(l.variant_id).split(' · ')[0]) || variantLabel(l.variant_id)}
-                </p>
-                <p
-                  className="font-mono-meta"
-                  style={{
-                    fontSize: 10,
-                    color: 'var(--ink-500)',
-                    marginTop: 2,
-                    letterSpacing: '0.05em',
-                    textTransform: 'uppercase',
-                  }}
-                >
-                  {l.qty} × {fmtEUR(l.unit_price)} · {VAT_LABEL[l.vat_rate]}
-                </p>
+        {lines.map((l, i) => {
+          const v = variants.find((x) => x.id === l.variant_id);
+          const p = plants.find((x) => x.id === v?.plant_id);
+          const { primary, secondary } = pickPlantName(p ?? null);
+          const supplier = supplierByVariant.get(l.variant_id);
+          const size = v ? sizeDetailsString({
+            pot_volume_l: v.pot_volume_l,
+            height_min_cm: v.height_min_cm,
+            height_max_cm: v.height_max_cm,
+            girth_min_cm: v.girth_min_cm,
+            girth_max_cm: v.girth_max_cm,
+          }) : null;
+          return (
+            <div key={l.variant_id}>
+              {i > 0 && <div className="hairline" style={{ margin: '0 16px' }} />}
+              <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <p style={{ fontSize: 14, fontWeight: 500, color: 'var(--ink-900)' }}>
+                    {primary === 'Φυτό' ? variantLabel(l.variant_id) : primary}
+                  </p>
+                  {secondary && (
+                    <p
+                      className="font-display"
+                      style={{ fontStyle: 'italic', fontSize: 12, color: 'var(--ink-500)', marginTop: 1 }}
+                    >
+                      {secondary}
+                    </p>
+                  )}
+                  {(supplier || size) && (
+                    <p
+                      className="font-mono-meta"
+                      style={{
+                        fontSize: 10,
+                        color: 'var(--ink-500)',
+                        marginTop: 3,
+                        letterSpacing: '0.05em',
+                        textTransform: 'uppercase',
+                      }}
+                    >
+                      {[supplier, size].filter(Boolean).join(' · ')}
+                    </p>
+                  )}
+                  <p
+                    className="font-mono-meta"
+                    style={{
+                      fontSize: 10,
+                      color: 'var(--ink-300)',
+                      marginTop: 3,
+                      letterSpacing: '0.04em',
+                    }}
+                  >
+                    {l.qty} × {fmtEUR(l.unit_price)} · {VAT_LABEL[l.vat_rate]}
+                  </p>
+                </div>
+                <span className="font-mono-meta" style={{ fontSize: 13, fontWeight: 500, marginTop: 1 }}>
+                  {fmtEUR(l.qty * l.unit_price)}
+                </span>
               </div>
-              <span className="font-mono-meta" style={{ fontSize: 13, fontWeight: 500 }}>
-                {fmtEUR(l.qty * l.unit_price)}
-              </span>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       {notes && (
