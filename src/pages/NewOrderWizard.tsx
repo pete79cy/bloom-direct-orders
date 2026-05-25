@@ -10,6 +10,7 @@ import QtyStepper from '@/components/QtyStepper';
 import VariantCard from '@/components/VariantCard';
 import PlantTile from '@/components/PlantTile';
 import LeafMark from '@/components/LeafMark';
+import NewCustomerSheet from '@/components/NewCustomerSheet';
 import {
   useCustomers, usePlants, useVariants, useCustomerPrices, useCreateDirectOrder,
   useSuppliers, useSupplierProducts, useSupplierPrices,
@@ -171,6 +172,8 @@ interface Step1Props {
 
 function Step1Customer({ customers, selected, onSelect }: Step1Props) {
   const [query, setQuery] = useState('');
+  const [newCustomerOpen, setNewCustomerOpen] = useState(false);
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return customers;
@@ -180,6 +183,9 @@ function Step1Customer({ customers, selected, onSelect }: Step1Props) {
         c.legal_name.toLowerCase().includes(q),
     );
   }, [customers, query]);
+
+  const trimmedQuery = query.trim();
+  const noResults = trimmedQuery.length > 0 && filtered.length === 0;
 
   return (
     <div className="px-4 mt-3">
@@ -193,6 +199,91 @@ function Step1Customer({ customers, selected, onSelect }: Step1Props) {
           className="w-full h-11 pl-10 pr-4 rounded-xl bg-white border border-gray-200 text-base"
         />
       </div>
+
+      {/* Quick action — "Create customer «<query>»" appears only when the
+          search has produced no matches; pre-fills trading_name from the
+          query. This is the fast path: type the name, no match → tap. */}
+      {noResults && (
+        <button
+          type="button"
+          onClick={() => setNewCustomerOpen(true)}
+          className="ios-tap"
+          style={{
+            width: '100%',
+            marginTop: 12,
+            padding: '14px 16px',
+            background: 'var(--sage-50)',
+            border: '1px solid rgba(63,107,92,0.20)',
+            borderRadius: 14,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 12,
+            color: 'var(--sage-700)',
+            textAlign: 'left',
+          }}
+        >
+          <span
+            style={{
+              width: 32,
+              height: 32,
+              borderRadius: 999,
+              background: 'var(--sage-700)',
+              color: 'var(--cream-50)',
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexShrink: 0,
+            }}
+          >
+            <Plus size={16} strokeWidth={2.25} />
+          </span>
+          <span style={{ flex: 1, minWidth: 0 }}>
+            <p style={{ fontSize: 14, fontWeight: 500, color: 'var(--sage-800)' }}>
+              Δημιουργία πελάτη
+            </p>
+            <p
+              style={{
+                fontSize: 12,
+                color: 'var(--ink-500)',
+                marginTop: 2,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              «{trimmedQuery}»
+            </p>
+          </span>
+        </button>
+      )}
+
+      {/* Always-visible "Νέος πελάτης" entry when the search is empty —
+          keeps the new-customer flow one tap away even before typing. */}
+      {!trimmedQuery && customers.length > 0 && (
+        <button
+          type="button"
+          onClick={() => setNewCustomerOpen(true)}
+          className="ios-tap"
+          style={{
+            width: '100%',
+            marginTop: 12,
+            padding: '12px 14px',
+            background: '#fff',
+            border: '1px dashed rgba(63,107,92,0.30)',
+            borderRadius: 12,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 10,
+            color: 'var(--sage-700)',
+            textAlign: 'left',
+            fontSize: 14,
+            fontWeight: 500,
+          }}
+        >
+          <Plus size={14} strokeWidth={2} color="var(--sage-700)" />
+          Νέος πελάτης
+        </button>
+      )}
 
       <ul className="mt-3 bg-white rounded-xl divide-y divide-gray-100">
         {filtered.map((c) => (
@@ -212,6 +303,17 @@ function Step1Customer({ customers, selected, onSelect }: Step1Props) {
           </li>
         ))}
       </ul>
+
+      <NewCustomerSheet
+        open={newCustomerOpen}
+        onClose={() => setNewCustomerOpen(false)}
+        initialTradingName={trimmedQuery}
+        onCreated={(customer) => {
+          setNewCustomerOpen(false);
+          setQuery('');
+          onSelect(customer);   // auto-select + advances to step 2
+        }}
+      />
     </div>
   );
 }

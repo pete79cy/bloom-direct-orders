@@ -54,6 +54,34 @@ export function usePlants() {
   });
 }
 
+export interface CreateCustomerPayload {
+  trading_name: string;
+  legal_name?: string;
+  vat_id?: string;
+  country?: string;
+  payment_terms_days?: number;
+  notes?: string;
+}
+
+export function useCreateCustomer() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: CreateCustomerPayload) =>
+      apiFetch<Customer>('/api/customers', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }),
+    onSuccess: (created) => {
+      // Optimistically append to the list so the wizard can pick it up
+      // immediately without waiting for a refetch.
+      qc.setQueryData<Customer[]>(['customers'], (prev) =>
+        prev ? [created, ...prev] : [created],
+      );
+      qc.invalidateQueries({ queryKey: ['customers'] });
+    },
+  });
+}
+
 export function useSuppliers() {
   return useQuery({
     queryKey: ['suppliers'],
