@@ -12,8 +12,10 @@ import PlantTile from '@/components/PlantTile';
 import LeafMark from '@/components/LeafMark';
 import {
   useCustomers, usePlants, useVariants, useCustomerPrices, useCreateDirectOrder,
-  useSuppliers, useSupplierProducts,
+  useSuppliers, useSupplierProducts, useSupplierPrices,
 } from '@/lib/queries';
+import { buildCostMap, marginPct } from '@/lib/supplier-cost';
+import PriceInput from '@/components/PriceInput';
 import { fmtEUR, fmtLongDate, isoToday, addDays } from '@/lib/format';
 import {
   pickPlantName, sizeDetailsString, fallbackVariantLabel,
@@ -54,6 +56,7 @@ export default function NewOrderWizard() {
   const { data: customerPrices = [] } = useCustomerPrices(customer?.id);
   const { data: suppliers = [] } = useSuppliers();
   const { data: supplierProducts = [] } = useSupplierProducts();
+  const { data: supplierPrices = [] } = useSupplierPrices();
 
   // Map variant_id → supplier display name. When a variant has multiple
   // suppliers, the highest match_confidence wins; ties broken by name.
@@ -69,6 +72,13 @@ export default function NewOrderWizard() {
     }
     return byId;
   }, [supplierProducts, suppliers]);
+
+  // Map variant_id → cheapest current cost. Used to show cost alongside
+  // sell price so the user can judge margin while pricing.
+  const costByVariant = useMemo(
+    () => buildCostMap(supplierProducts, supplierPrices),
+    [supplierProducts, supplierPrices],
+  );
 
   // Re-price existing lines whenever customer prices land or change.
   useEffect(() => {
@@ -129,6 +139,7 @@ export default function NewOrderWizard() {
           variants={variants}
           customerPrices={customerPrices}
           supplierByVariant={supplierByVariant}
+          costByVariant={costByVariant}
           lines={lines}
           onChange={setLines}
           onContinue={() => setStep(3)}
@@ -268,13 +279,14 @@ interface Step3Props {
   variants: Variant[];
   customerPrices: CustomerPrice[];
   supplierByVariant: Map<string, string>;
+  costByVariant: Map<string, number>;
   lines: DraftLine[];
   onChange: (lines: DraftLine[]) => void;
   onContinue: () => void;
 }
 
 function Step3Lines({
-  customer, plants, variants, customerPrices, supplierByVariant,
+  customer, plants, variants, customerPrices, supplierByVariant, costByVariant,
   lines, onChange, onContinue,
 }: Step3Props) {
   const [sheetOpen, setSheetOpen] = useState(false);
@@ -400,6 +412,7 @@ function Step3Lines({
                 plant={meta?.plant}
                 supplier={meta?.supplier ?? null}
                 variant={meta?.variant}
+                cost={costByVariant.get(l.variant_id) ?? null}
                 onUpdate={(patch) => updateLine(l.variant_id, patch)}
                 onRemove={() => removeLine(l.variant_id)}
               />
@@ -586,6 +599,7 @@ function Step3Lines({
                   customerPrice={
                     customerPrices.find((cp) => cp.variant_id === x.variant.id)?.effective_unit_price
                   }
+                  cost={costByVariant.get(x.variant.id) ?? null}
                   added={lines.some((l) => l.variant_id === x.variant.id)}
                   onAdd={() => addLine(x.variant)}
                 />
@@ -603,13 +617,12 @@ interface LineRowProps {
   plant: Plant | undefined;
   variant: Variant | undefined;
   supplier: string | null;
+  cost: number | null;
   onUpdate: (patch: Partial<DraftLine>) => void;
   onRemove: () => void;
 }
 
-function LineRow({ line, plant, variant, supplier, onUpdate, onRemove }: LineRowProps) {
-  const [priceEdit, setPriceEdit] = useState(false);
-
+function LineRow({ line, plant, variant, supplier, cost, onUpdate, onRemove }: LineRowProps) {
   const { primary, secondary } = pickPlantName(plant ?? null);
   const displayPrimary = primary === 'Φυτό'
     ? fallbackVariantLabel(variant?.variant_code)
@@ -713,23 +726,6 @@ function LineRow({ line, plant, variant, supplier, onUpdate, onRemove }: LineRow
               {size}
             </p>
           )}
-          <button
-            type="button"
-            onClick={() => setPriceEdit(true)}
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 5,
-              marginTop: 8,
-              color: priceColor,
-            }}
-          >
-            <PriceIcon size={11} />
-            <span className="font-mono-meta" style={{ fontSize: 11, fontWeight: 500 }}>
-              {fmtEUR(line.unit_price)}
-            </span>
-            <span style={{ fontSize: 10, opacity: 0.7 }}>· {priceLabel}</span>
-          </button>
         </div>
         <button
           type="button"
@@ -741,7 +737,86 @@ function LineRow({ line, plant, variant, supplier, onUpdate, onRemove }: LineRow
         </button>
       </div>
 
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+      {/* Price area — Cost (read-only) + Sell (editable input) side by side.
+          The sell input is always editable: no separate edit mode, no
+          tap-to-reveal. Margin % computed from the cost on the left. */}
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: '1fr 1.2fr',
+          gap: 12,
+          marginTop: 4,
+          paddingTop: 12,
+          borderTop: '1px dashed rgba(63,75,70,0.10)',
+        }}
+      >
+        {/* Cost column */}
+        <div>
+          <div className="text-eyebrow" style={{ fontSize: 9, marginBottom: 4 }}>
+            Κόστος
+          </div>
+          {cost != null ? (
+            <>
+              <div
+                className="font-mono-meta"
+                style={{ fontSize: 14, fontWeight: 500, color: 'var(--ink-700)' }}
+              >
+                {fmtEUR(cost)}
+              </div>
+              {(() => {
+                const m = marginPct(line.unit_price, cost);
+                if (m == null) return null;
+                const isLoss = m < 0;
+                const isThin = !isLoss && m < 15;
+                const color = isLoss ? 'var(--accent-clay)' : isThin ? 'var(--honey)' : 'var(--sage-600)';
+                return (
+                  <div
+                    className="font-mono-meta"
+                    style={{ fontSize: 10, color, marginTop: 3, fontWeight: 500 }}
+                  >
+                    {m >= 0 ? '+' : ''}{m.toFixed(0)}% margin
+                  </div>
+                );
+              })()}
+            </>
+          ) : (
+            <div
+              style={{
+                fontSize: 13,
+                color: 'var(--ink-300)',
+                fontFamily: 'var(--font-mono)',
+              }}
+            >
+              —
+            </div>
+          )}
+        </div>
+
+        {/* Sell column — actual input */}
+        <div>
+          <div className="text-eyebrow" style={{ fontSize: 9, marginBottom: 4 }}>
+            Τιμή πώλησης
+          </div>
+          <PriceInput
+            value={line.unit_price}
+            onChange={(v) =>
+              onUpdate({
+                unit_price: v,
+                price_source: line.price_source === 'customer' && v === line.unit_price
+                  ? 'customer'
+                  : 'override',
+              })
+            }
+            hint={priceLabel}
+            hintColor={priceColor}
+            hintIcon={<PriceIcon size={10} color={priceColor} />}
+            warn={cost != null && line.unit_price < cost}
+          />
+        </div>
+      </div>
+
+      {/* Bottom action row — qty stepper, VAT picker, line total */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginTop: 4 }}>
         <QtyStepper value={line.qty} min={1} onChange={(qty) => onUpdate({ qty })} />
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <VatPicker
@@ -753,26 +828,6 @@ function LineRow({ line, plant, variant, supplier, onUpdate, onRemove }: LineRow
           </span>
         </div>
       </div>
-
-      {priceEdit && (
-        <div className="mt-2 flex items-center gap-2">
-          <input
-            type="number"
-            step="0.01"
-            min="0"
-            defaultValue={line.unit_price}
-            onBlur={(e) => {
-              const v = parseFloat(e.target.value);
-              if (!Number.isNaN(v) && v >= 0) {
-                onUpdate({ unit_price: v, price_source: 'override' });
-              }
-              setPriceEdit(false);
-            }}
-            className="w-32 h-10 px-3 rounded-lg border border-gray-300"
-            autoFocus
-          />
-        </div>
-      )}
     </div>
   );
 }

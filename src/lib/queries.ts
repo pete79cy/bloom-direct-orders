@@ -10,6 +10,7 @@ import type {
   OrderStatus,
   Supplier,
   SupplierProduct,
+  SupplierPrice,
 } from '@/types';
 
 const TEN_MIN = 10 * 60 * 1000;
@@ -66,6 +67,14 @@ export function useSupplierProducts() {
     queryKey: ['supplier-products'],
     staleTime: TEN_MIN,
     queryFn: () => apiFetch<SupplierProduct[]>('/api/supplier-products'),
+  });
+}
+
+export function useSupplierPrices() {
+  return useQuery({
+    queryKey: ['supplier-prices'],
+    staleTime: TEN_MIN,
+    queryFn: () => apiFetch<SupplierPrice[]>('/api/supplier-prices'),
   });
 }
 

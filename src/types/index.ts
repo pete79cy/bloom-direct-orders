@@ -82,6 +82,19 @@ export interface SupplierProduct {
   match_confidence: number;
 }
 
+export interface SupplierPrice {
+  id: string;
+  supplier_product_id: string;
+  cost_price: number;
+  currency: string;
+  valid_from: string;
+  valid_to: string | null;
+  min_qty: number;
+  lead_time_days: number;
+  source: string;
+  captured_at: string;
+}
+
 // Joined/enriched line as returned by GET /api/orders/:id
 export interface OrderLineEnriched extends OrderLine {
   plant_common_name: string | null;

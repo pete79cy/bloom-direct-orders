@@ -13,6 +13,7 @@ interface Props {
   plant: Plant | undefined;
   supplier?: string | null;
   customerPrice?: number | null;
+  cost?: number | null;
   added?: boolean;
   onAdd: () => void;
 }
@@ -42,6 +43,7 @@ export default function VariantCard({
   plant,
   supplier,
   customerPrice,
+  cost,
   added,
   onAdd,
 }: Props) {
@@ -157,30 +159,47 @@ export default function VariantCard({
           flexShrink: 0,
         }}
       >
-        {price != null ? (
-          <span
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 4,
-              fontSize: 12,
-              fontWeight: 500,
-              color: isCustomerPrice ? 'var(--sage-700)' : 'var(--ink-700)',
-            }}
-            className="font-mono-meta"
-            title={isCustomerPrice ? 'Τιμή πελάτη' : 'Default τιμή'}
-          >
-            {isCustomerPrice && <Tag size={11} color="var(--sage-700)" strokeWidth={1.5} />}
-            {fmtEUR(price)}
-          </span>
-        ) : (
-          <span
-            className="text-eyebrow"
-            style={{ fontSize: 9, color: 'var(--ink-300)' }}
-          >
-            No price
-          </span>
-        )}
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2 }}>
+          {/* Sell price (or "No price") */}
+          {price != null ? (
+            <span
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 4,
+                fontSize: 12,
+                fontWeight: 500,
+                color: isCustomerPrice ? 'var(--sage-700)' : 'var(--ink-900)',
+              }}
+              className="font-mono-meta"
+              title={isCustomerPrice ? 'Τιμή πελάτη' : 'Default τιμή'}
+            >
+              {isCustomerPrice && <Tag size={11} color="var(--sage-700)" strokeWidth={1.5} />}
+              {fmtEUR(price)}
+            </span>
+          ) : (
+            <span
+              className="text-eyebrow"
+              style={{ fontSize: 9, color: 'var(--ink-300)' }}
+            >
+              No price
+            </span>
+          )}
+          {/* Cost — small, muted, beneath the sell price */}
+          {cost != null && (
+            <span
+              className="font-mono-meta"
+              style={{
+                fontSize: 10,
+                color: 'var(--ink-300)',
+                letterSpacing: 0,
+              }}
+              title="Χαμηλότερο κόστος προμηθευτή"
+            >
+              {fmtEUR(cost)} cost
+            </span>
+          )}
+        </div>
 
         <button
           type="button"
