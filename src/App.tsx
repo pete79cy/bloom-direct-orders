@@ -12,7 +12,15 @@ import PwaUpdateToast from './components/PwaUpdateToast';
 
 const queryClient = new QueryClient({
   defaultOptions: {
-    queries: { staleTime: 30_000, retry: 1, refetchOnWindowFocus: false },
+    queries: {
+      staleTime: 30_000,
+      retry: 1,
+      // Refetch when the user returns to the PWA tab (e.g. after creating
+      // a plant in bloom-crm desktop). Without this the catalog stays
+      // stuck on whatever was cached when the wizard first opened.
+      refetchOnWindowFocus: true,
+      refetchOnReconnect: true,
+    },
   },
 });
 

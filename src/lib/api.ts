@@ -31,7 +31,16 @@ export async function apiFetch<T>(
   }
   if (token) headers.set('Authorization', `Bearer ${token}`);
 
-  const res = await fetch(`${BASE_URL}${path}`, { ...init, headers });
+  // Bypass the browser HTTP cache for ALL API calls. We rely on TanStack
+  // Query for client-side caching, which knows when to invalidate; the
+  // browser's automatic cache (with heuristic freshness when Cache-Control
+  // is missing) would otherwise return stale catalog data after the user
+  // creates rows in bloom-crm desktop, even when TanStack refetches.
+  const res = await fetch(`${BASE_URL}${path}`, {
+    cache: 'no-store',
+    ...init,
+    headers,
+  });
 
   if (res.status === 401) {
     unauthorizedHandler?.();

@@ -670,6 +670,38 @@ function Step3Lines({
               Προσθήκη φυτού
             </h3>
           </div>
+
+          {/* Manual refresh — for when the user just added a plant in
+              the desktop CRM and wants to force-pull while the sheet is
+              already open. The cache-on-open + window-focus refetches
+              cover most cases; this is the explicit escape hatch. */}
+          <button
+            type="button"
+            aria-label="Ανανέωση καταλόγου"
+            onClick={() => {
+              qc.invalidateQueries({ queryKey: ['plants'] });
+              qc.invalidateQueries({ queryKey: ['variants'] });
+              qc.invalidateQueries({ queryKey: ['suppliers'] });
+              qc.invalidateQueries({ queryKey: ['supplier-products'] });
+              qc.invalidateQueries({ queryKey: ['supplier-prices'] });
+              toast.message('Ανανεωμένος κατάλογος');
+            }}
+            className="ios-tap"
+            style={{
+              width: 36, height: 36, borderRadius: 999,
+              background: 'rgba(63,75,70,0.06)',
+              color: 'var(--sage-700)',
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+              flexShrink: 0,
+            }}
+          >
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+              <path
+                d="M2.5 8a5.5 5.5 0 0 1 9.4-3.9M13.5 8a5.5 5.5 0 0 1-9.4 3.9M11.5 2v3h-3M4.5 14v-3h3"
+                stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"
+              />
+            </svg>
+          </button>
         </div>
 
         {/* Sage-bordered focused search input */}
