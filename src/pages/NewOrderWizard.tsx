@@ -11,6 +11,7 @@ import VariantCard from '@/components/VariantCard';
 import PlantTile from '@/components/PlantTile';
 import LeafMark from '@/components/LeafMark';
 import NewCustomerSheet from '@/components/NewCustomerSheet';
+import AddLineSheet, { type AddLineResult } from '@/components/AddLineSheet';
 import {
   useCustomers, usePlants, useVariants, useCustomerPrices, useCreateDirectOrder,
   useSuppliers, useSupplierProducts, useSupplierPrices,
@@ -23,7 +24,6 @@ import {
 } from '@/lib/plant-display';
 import VatPicker from '@/components/VatPicker';
 import {
-  DEFAULT_VAT_RATE,
   VAT_LABEL,
   vatBreakdown,
   type VatRate,
@@ -393,6 +393,8 @@ function Step3Lines({
 }: Step3Props) {
   const [sheetOpen, setSheetOpen] = useState(false);
   const [query, setQuery] = useState('');
+  // The variant currently being configured in the AddLineSheet. null = closed.
+  const [configuringVariant, setConfiguringVariant] = useState<Variant | null>(null);
 
   const variantsWithPlant = useMemo(
     () =>
@@ -445,19 +447,39 @@ function Step3Lines({
     return { price: fallback ?? 0, source: 'default' };
   }
 
-  function addLine(v: Variant) {
-    if (lines.some((l) => l.variant_id === v.id)) return;
-    const { price, source } = priceForVariant(v.id, v.default_sell_price);
+  /**
+   * The + button on a VariantCard. Two paths:
+   *  - Variant already in cart → toast, do nothing else
+   *  - New variant → open the AddLineSheet to configure price/qty/VAT
+   * The actual line is appended only after commit from the sheet.
+   */
+  function requestAddLine(v: Variant) {
+    if (lines.some((l) => l.variant_id === v.id)) {
+      toast.message('Ήδη στην παραγγελία');
+      return;
+    }
+    setConfiguringVariant(v);
+  }
+
+  /** Commit handler — fired by AddLineSheet when user taps "Προσθήκη". */
+  function commitConfiguredLine(result: AddLineResult) {
+    const v = configuringVariant;
+    if (!v) return;
+    const { source } = priceForVariant(v.id, v.default_sell_price);
+    // If the user typed a different price than the seeded one, the line is
+    // 'override'; if they kept the customer-specific price, source stays
+    // 'customer'; otherwise it's the default catalogue price.
+    const finalSource: PriceSource = result.priceOverridden ? 'override' : source;
     const next: DraftLine = {
       variant_id: v.id,
-      qty: 1,
-      unit_price: price,
-      price_source: source,
-      vat_rate: DEFAULT_VAT_RATE,
+      qty: result.qty,
+      unit_price: result.unit_price,
+      price_source: finalSource,
+      vat_rate: result.vat_rate,
     };
     onChange([...lines, next]);
-    // Don't close the search modal — let the user add multiple plants in
-    // a single search session. The modal is dismissed via the close button.
+    setConfiguringVariant(null);
+    // Leave the search sheet open with its query — user can keep adding.
   }
 
   function updateLine(variantId: string, patch: Partial<DraftLine>) {
@@ -703,13 +725,31 @@ function Step3Lines({
                   }
                   cost={costByVariant.get(x.variant.id) ?? null}
                   added={lines.some((l) => l.variant_id === x.variant.id)}
-                  onAdd={() => addLine(x.variant)}
+                  onAdd={() => requestAddLine(x.variant)}
                 />
               ))}
             </div>
           )}
         </div>
       </FullScreenSheet>
+
+      {/* Configure-line sheet — opens above the search modal when the user
+          taps + on a not-yet-added variant. Commits via onAdd → appends to
+          lines, closes itself, leaves the search modal as it was. */}
+      <AddLineSheet
+        open={configuringVariant !== null}
+        variant={configuringVariant}
+        plant={configuringVariant ? plants.find((p) => p.id === configuringVariant.plant_id) : undefined}
+        supplier={configuringVariant ? supplierByVariant.get(configuringVariant.id) : null}
+        cost={configuringVariant ? (costByVariant.get(configuringVariant.id) ?? null) : null}
+        customerPrice={
+          configuringVariant
+            ? customerPrices.find((cp) => cp.variant_id === configuringVariant.id)?.effective_unit_price
+            : null
+        }
+        onClose={() => setConfiguringVariant(null)}
+        onAdd={commitConfiguredLine}
+      />
     </div>
   );
 }
