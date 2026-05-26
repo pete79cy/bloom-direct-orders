@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   ArrowLeft, Search, Plus, Trash2, Tag, FileText, Edit3,
 } from 'lucide-react';
@@ -173,6 +174,15 @@ interface Step1Props {
 function Step1Customer({ customers, selected, onSelect }: Step1Props) {
   const [query, setQuery] = useState('');
   const [newCustomerOpen, setNewCustomerOpen] = useState(false);
+
+  // Refresh the customer list when entering step 1 — so a customer
+  // created in bloom-crm desktop while the wizard was open is visible.
+  // Runs once on mount; the local optimistic-update from
+  // NewCustomerSheet handles in-wizard creations separately.
+  const qc = useQueryClient();
+  useEffect(() => {
+    qc.invalidateQueries({ queryKey: ['customers'] });
+  }, [qc]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -395,6 +405,23 @@ function Step3Lines({
   const [query, setQuery] = useState('');
   // The variant currently being configured in the AddLineSheet. null = closed.
   const [configuringVariant, setConfiguringVariant] = useState<Variant | null>(null);
+
+  // When the user opens the plant-search sheet, invalidate the cached
+  // catalog so a freshly-created plant/variant in the bloom-crm desktop
+  // app shows up immediately. Without this, TanStack Query's 10-min
+  // staleTime means the user can't find plants they just added.
+  const qc = useQueryClient();
+  useEffect(() => {
+    if (!sheetOpen) return;
+    qc.invalidateQueries({ queryKey: ['plants'] });
+    qc.invalidateQueries({ queryKey: ['variants'] });
+    qc.invalidateQueries({ queryKey: ['suppliers'] });
+    qc.invalidateQueries({ queryKey: ['supplier-products'] });
+    qc.invalidateQueries({ queryKey: ['supplier-prices'] });
+    if (customer?.id) {
+      qc.invalidateQueries({ queryKey: ['customer-prices', customer.id] });
+    }
+  }, [sheetOpen, qc, customer?.id]);
 
   const variantsWithPlant = useMemo(
     () =>
