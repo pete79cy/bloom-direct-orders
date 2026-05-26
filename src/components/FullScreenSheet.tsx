@@ -53,21 +53,27 @@ export function FullScreenSheet({
     }
   }, [open]);
 
+  // Escape-to-close, no body lock.
+  //
+  // The full-screen modal covers the entire viewport at zIndex 1300 with
+  // an opaque background — body scroll behind it can't be seen and
+  // can't be triggered (the modal swallows pointer events). The body-
+  // lock pattern (document.body.style.overflow = 'hidden') is needed only
+  // for half-height sheets. Here it was a source of state leaks: onClose
+  // is an inline arrow function in callers, so this effect re-ran on
+  // every parent render, repeatedly capturing/restoring body.overflow.
+  // Under certain interleavings (sheet closes while parent is mid-render)
+  // the captured 'previous' state could be 'hidden' itself, and cleanup
+  // would 'restore' body to 'hidden' — locking page scroll permanently
+  // until the next navigation.
   useEffect(() => {
     if (!shouldRender) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
     };
     window.addEventListener('keydown', onKey);
-    const scrollbarWidth = window.innerWidth - document.documentElement.clientWidth;
-    const prevOverflow = document.body.style.overflow;
-    const prevPadding = document.body.style.paddingRight;
-    document.body.style.overflow = 'hidden';
-    if (scrollbarWidth > 0) document.body.style.paddingRight = `${scrollbarWidth}px`;
     return () => {
       window.removeEventListener('keydown', onKey);
-      document.body.style.overflow = prevOverflow;
-      document.body.style.paddingRight = prevPadding;
     };
   }, [shouldRender, onClose]);
 

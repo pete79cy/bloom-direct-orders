@@ -82,6 +82,19 @@ export default function NewOrderWizard() {
     [supplierProducts, supplierPrices],
   );
 
+  // Defensive: clear any leaked body-lock when the wizard mounts. If a
+  // sheet on a previous screen failed to restore document.body.style
+  // .overflow, the user would be unable to scroll any subsequent page.
+  // Running this on the wizard's mount and unmount catches the leak.
+  useEffect(() => {
+    document.body.style.overflow = '';
+    document.body.style.paddingRight = '';
+    return () => {
+      document.body.style.overflow = '';
+      document.body.style.paddingRight = '';
+    };
+  }, []);
+
   // Re-price existing lines whenever customer prices land or change.
   useEffect(() => {
     if (!customer || customerPrices.length === 0) return;
@@ -108,6 +121,16 @@ export default function NewOrderWizard() {
           <ArrowLeft className="w-5 h-5" />
         </button>
         <h1 className="text-lg font-semibold">Νέα παραγγελία</h1>
+        {/* Visible build marker — disambiguates "old SW serving stale bundle"
+            from "real bug in latest code". This deploy carries the marker
+            v4; if the user sees anything else (or no marker at all) their
+            Service Worker hasn't picked up the new build yet. */}
+        <span
+          className="font-mono-meta ml-auto"
+          style={{ fontSize: 10, color: 'var(--ink-300)', letterSpacing: 0 }}
+        >
+          v4
+        </span>
       </header>
 
       <MobileStepper steps={STEP_LABELS} current={step} />
