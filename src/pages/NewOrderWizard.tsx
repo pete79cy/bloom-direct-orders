@@ -121,16 +121,6 @@ export default function NewOrderWizard() {
           <ArrowLeft className="w-5 h-5" />
         </button>
         <h1 className="text-lg font-semibold">Νέα παραγγελία</h1>
-        {/* Visible build marker — disambiguates "old SW serving stale bundle"
-            from "real bug in latest code". This deploy carries the marker
-            v4; if the user sees anything else (or no marker at all) their
-            Service Worker hasn't picked up the new build yet. */}
-        <span
-          className="font-mono-meta ml-auto"
-          style={{ fontSize: 10, color: 'var(--ink-300)', letterSpacing: 0 }}
-        >
-          v4
-        </span>
       </header>
 
       <MobileStepper steps={STEP_LABELS} current={step} />
