@@ -1,12 +1,15 @@
 import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, FileText, Loader2 } from 'lucide-react';
+import { ArrowLeft, FileText } from 'lucide-react';
 import { toast } from 'sonner';
 import { useOrder, usePatchOrder } from '@/lib/queries';
 import { fmtEUR, fmtLongDate } from '@/lib/format';
 import StatusTimeline from '@/components/StatusTimeline';
+import PdfActionSheet from '@/components/PdfActionSheet';
 import { prettyScientificName, cleanSizeSummary } from '@/lib/plant-display';
 import { vatBreakdown, VAT_LABEL } from '@/lib/vat';
+import { apiFetch } from '@/lib/api';
+import type { DeliveryPdfMode } from '@/lib/pdf-delivery';
 import type { OrderStatus, OrderLineEnriched, OrderDetail as OrderDetailT } from '@/types';
 
 const STATUS_NEXT: Partial<Record<OrderStatus, OrderStatus[]>> = {
@@ -49,18 +52,42 @@ export default function OrderDetail() {
   const { data, isLoading } = useOrder(id);
   const patch = usePatchOrder();
   const [pdfBusy, setPdfBusy] = useState(false);
+  const [pdfSheetOpen, setPdfSheetOpen] = useState(false);
 
   if (isLoading || !data) {
     return <div className="p-4 text-ink-500">Φόρτωση…</div>;
   }
 
-  async function onExportPdf(detail: OrderDetailT) {
+  async function onGeneratePdf(detail: OrderDetailT, modes: DeliveryPdfMode[]) {
+    if (modes.length === 0) return;
     setPdfBusy(true);
     try {
-      // Lazy-import so jsPDF + autotable (~280KB) only land when needed.
-      const { shareOrDownloadOrderPdf } = await import('@/lib/pdf-order');
-      const result = await shareOrDownloadOrderPdf(detail);
+      // Lazy-import so jsPDF + autotable + fonts only land on first use.
+      const { shareOrDownloadDeliveryPdf } = await import('@/lib/pdf-delivery');
+
+      // Fetch photos only when the visual mode is selected. The endpoint
+      // is server-side aggregated and base64-encodes each plant photo,
+      // so it can be a few MB on heavy orders — only pay the cost when
+      // we actually need it.
+      let photos: Record<string, string> = {};
+      if (modes.includes('visual')) {
+        try {
+          photos = await apiFetch<Record<string, string>>(`/api/orders/${detail.order.id}/photos`);
+        } catch {
+          // Visual list still renders — every line falls back to the
+          // "No photo" placeholder if the fetch fails.
+          toast.error('Δεν φορτώθηκαν οι φωτογραφίες — placeholder');
+        }
+      }
+
+      // DN number: server-assigned DNs would live on detail.deliveryNotes
+      // — for v1 we fall back to a deterministic preview number based on
+      // the order number so the PDF always has something in the slot.
+      const dnNumber = detail.order.order_number.replace(/^ORD-/, 'DN-');
+
+      const result = await shareOrDownloadDeliveryPdf(detail, { modes, dnNumber, photos });
       toast.success(result === 'shared' ? 'PDF διαμοιράστηκε' : 'PDF κατέβηκε');
+      setPdfSheetOpen(false);
     } catch (err) {
       console.error('PDF export failed:', err);
       toast.error('Αποτυχία δημιουργίας PDF');
@@ -248,23 +275,25 @@ export default function OrderDetail() {
         </div>
       </section>
 
-      {/* PDF export */}
+      {/* PDF export — opens action sheet to pick which delivery doc(s) */}
       <section style={{ padding: '20px 20px 0' }}>
         <button
           type="button"
-          disabled={pdfBusy}
-          onClick={() => onExportPdf(data)}
+          onClick={() => setPdfSheetOpen(true)}
           className="btn-secondary ios-tap"
           style={{ height: 48 }}
         >
-          {pdfBusy ? (
-            <Loader2 size={16} color="var(--sage-700)" className="animate-spin" />
-          ) : (
-            <FileText size={16} color="var(--sage-700)" strokeWidth={1.75} />
-          )}
-          {pdfBusy ? 'Δημιουργία PDF…' : 'Λήψη / Κοινοποίηση PDF'}
+          <FileText size={16} color="var(--sage-700)" strokeWidth={1.75} />
+          Λήψη / Εκτύπωση
         </button>
       </section>
+
+      <PdfActionSheet
+        open={pdfSheetOpen}
+        onClose={() => setPdfSheetOpen(false)}
+        busy={pdfBusy}
+        onGenerate={(modes) => onGeneratePdf(data, modes)}
+      />
 
       {/* Notes */}
       {order.notes && (
