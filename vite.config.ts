@@ -26,6 +26,14 @@ export default defineConfig({
         ],
       },
       workbox: {
+        // Activate the new SW immediately instead of waiting for all tabs
+        // to close. Without this, iOS Safari standalone PWAs cling to the
+        // old SW indefinitely — meaning bug fixes never reach the user
+        // even after hard-refreshing the page.
+        skipWaiting: true,
+        // Take control of already-open pages on activation so they start
+        // serving from the new SW on the very next fetch.
+        clientsClaim: true,
         navigateFallback: '/index.html',
         runtimeCaching: [
           {
