@@ -124,7 +124,7 @@ export default function OrderDetail() {
   const cancelAction = nextStatuses.find((s) => s === 'CANCELLED');
 
   return (
-    <div className="min-h-full pb-10">
+    <div className="min-h-screen pb-10">
       <header
         className="pt-safe"
         style={{ padding: '14px 20px 8px', display: 'flex', alignItems: 'center', gap: 12 }}

@@ -80,12 +80,15 @@
   }
 
   html, body, #root {
-    /* min-height (not height) so containers fill the viewport when content
-       is short BUT can grow when content overflows. Strict height: 100%
-       traps long screens (e.g. wizard Step 3 with many line cards) below
-       the fold with no way to scroll because every container is clipped
-       to viewport height. */
-    min-height: 100%;
+    /* min-height: 100vh — viewport-relative, so it resolves cleanly without
+       needing a definite-height parent. Containers fill the viewport when
+       short, grow with content when long. Previously we had height: 100%
+       which clipped tall screens (e.g. wizard Step 3) below the fold with
+       no scroll. Then we tried min-height: 100% but percentages on
+       min-height require the *parent* to have a definite height — without
+       one they collapse to auto. 100vh sidesteps the whole resolution
+       chain. */
+    min-height: 100vh;
     background: var(--cream-100);
     color: var(--ink-900);
     -webkit-font-smoothing: antialiased;
@@ -93,7 +96,6 @@
     font-feature-settings: "ss01", "cv11";
     letter-spacing: -0.005em;
   }
-  html { height: 100%; }   /* anchor for the % below */
   body { overscroll-behavior-y: contain; }
 
   input, textarea, select, button { font-family: inherit; color: inherit; }

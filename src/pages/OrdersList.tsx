@@ -54,7 +54,7 @@ export default function OrdersList() {
   const activeCount = counts.ALL ?? 0;
 
   return (
-    <div className="min-h-full pb-24">
+    <div className="min-h-screen pb-24">
       <header className="pt-safe" style={{ padding: '14px 20px 0' }}>
         <div className="text-eyebrow">
           {today} · {activeCount} ενεργές

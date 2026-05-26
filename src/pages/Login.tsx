@@ -39,7 +39,7 @@ export default function Login() {
   }
 
   return (
-    <div className="min-h-full bg-paper flex flex-col justify-center px-6 pt-safe pb-safe relative overflow-hidden">
+    <div className="min-h-screen bg-paper flex flex-col justify-center px-6 pt-safe pb-safe relative overflow-hidden">
       {/* Decorative botanical mark, large but very faint, top-right */}
       <div
         aria-hidden="true"

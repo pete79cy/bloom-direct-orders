@@ -97,7 +97,7 @@ export default function NewOrderWizard() {
   }, [customerPrices]);
 
   return (
-    <div className="min-h-full pb-24">
+    <div className="min-h-screen pb-24">
       <header className="px-4 pt-safe pt-4 pb-2 flex items-center gap-3">
         <button
           type="button"

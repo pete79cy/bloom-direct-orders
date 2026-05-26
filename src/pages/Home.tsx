@@ -42,7 +42,7 @@ export default function Home() {
   }
 
   return (
-    <div className="min-h-full pb-24">
+    <div className="min-h-screen pb-24">
       <header
         className="pt-safe"
         style={{

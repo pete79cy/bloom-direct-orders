@@ -75,7 +75,7 @@ export default function Calendar() {
   const selectedOrders = selectedDay ? byDay.get(selectedDay) ?? [] : [];
 
   return (
-    <div className="min-h-full pb-24">
+    <div className="min-h-screen pb-24">
       <header className="px-4 pt-safe pt-4 pb-2 flex items-center justify-between">
         <button onClick={() => setCursor(new Date(cursor.getFullYear(), cursor.getMonth() - 1, 1))} aria-label="Προηγούμενος">
           <ChevronLeft className="w-5 h-5" />
