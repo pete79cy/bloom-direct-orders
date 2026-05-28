@@ -521,8 +521,18 @@ function Step3Lines({
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return variantsWithPlant.slice(0, 50);
-    return variantsWithPlant.filter((x) => x.searchBlob.includes(q)).slice(0, 50);
+    const base = q
+      ? variantsWithPlant.filter((x) => x.searchBlob.includes(q))
+      : variantsWithPlant;
+    // Sort draft variants to the bottom so they don't crowd out canonical
+    // matches. Within each group, preserve the source order (catalogue's
+    // natural ordering for actives, creation-time for drafts).
+    const sorted = [...base].sort((a, b) => {
+      const aDraft = a.variant.status === 'draft' ? 1 : 0;
+      const bDraft = b.variant.status === 'draft' ? 1 : 0;
+      return aDraft - bDraft;
+    });
+    return sorted.slice(0, 50);
   }, [variantsWithPlant, query]);
 
   // Net subtotal, VAT breakdown, and grand total — single source of truth

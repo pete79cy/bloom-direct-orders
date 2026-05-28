@@ -112,8 +112,25 @@ export default function VariantCard({
           </p>
         )}
 
-        {/* Supplier — eyebrow style, only when known */}
-        {supplier && (
+        {/* Eyebrow — for variants with status='draft' (PWA free-text-line
+            feature) the ΠΡΟΧΕΙΡΟ badge wins over supplier display so the
+            rep sees the draft state at a glance even on busy result rows. */}
+        {variant.status === 'draft' ? (
+          <p
+            className="text-eyebrow"
+            style={{
+              fontSize: 9,
+              marginTop: 4,
+              color: 'var(--clay)',
+              letterSpacing: '0.15em',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 4,
+            }}
+          >
+            <span aria-hidden="true">⚠</span> ΠΡΟΧΕΙΡΟ
+          </p>
+        ) : supplier ? (
           <p
             className="text-eyebrow"
             style={{
@@ -128,7 +145,7 @@ export default function VariantCard({
           >
             {supplier}
           </p>
-        )}
+        ) : null}
 
         {/* Size meta — monospace uppercase */}
         {size && (
@@ -196,8 +213,9 @@ export default function VariantCard({
               Χωρίς τιμή
             </span>
           )}
-          {/* Cost — small, muted, beneath the sell price */}
-          {cost != null && (
+          {/* Cost — small, muted, beneath the sell price. Suppressed for
+              drafts (no supplier link, so no cost exists). */}
+          {variant.status !== 'draft' && cost != null && (
             <span
               className="font-mono-meta"
               style={{
