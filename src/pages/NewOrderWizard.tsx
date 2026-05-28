@@ -1000,20 +1000,39 @@ interface LineRowProps {
 }
 
 function LineRow({ line, plant, variant, supplier, cost, onUpdate, onRemove }: LineRowProps) {
+  // A line is "draft" in two situations:
+  //   1. Locally just-typed via FreeTextLineSheet — line.draft is set
+  //      (variant lookup will fail because the variant doesn't exist yet
+  //      server-side).
+  //   2. Catalogue-reused — variant.status === 'draft' (the rep tapped (+)
+  //      on a draft VariantCard from a previous order). Variant lookup
+  //      succeeds and rendering should still flag the draft state.
+  const isDraft = !!line.draft || variant?.status === 'draft';
+  const draftName = line.draft?.name ?? '';
+  const draftSize = line.draft?.size ?? '';
+
   const { primary, secondary } = pickPlantName(plant ?? null);
-  const displayPrimary = primary === 'Φυτό'
-    ? fallbackVariantLabel(variant?.variant_code)
-    : primary;
-  const size = variant ? sizeDetailsString({
-    pot_volume_l: variant.pot_volume_l,
-    height_min_cm: variant.height_min_cm,
-    height_max_cm: variant.height_max_cm,
-    girth_min_cm: variant.girth_min_cm,
-    girth_max_cm: variant.girth_max_cm,
-  }) : null;
-  const tileLabel = (plant?.scientific_name?.split(/\s+/)[0] ?? variant?.variant_code.split('__')[0] ?? 'PLNT')
-    .slice(0, 4)
-    .toUpperCase();
+  const displayPrimary = line.draft
+    ? draftName
+    : primary === 'Φυτό'
+      ? fallbackVariantLabel(variant?.variant_code)
+      : primary;
+  const size = line.draft
+    ? (draftSize || null)
+    : variant
+      ? sizeDetailsString({
+          pot_volume_l: variant.pot_volume_l,
+          height_min_cm: variant.height_min_cm,
+          height_max_cm: variant.height_max_cm,
+          girth_min_cm: variant.girth_min_cm,
+          girth_max_cm: variant.girth_max_cm,
+        })
+      : null;
+  const tileLabel = isDraft
+    ? 'DRFT'
+    : (plant?.scientific_name?.split(/\s+/)[0] ?? variant?.variant_code.split('__')[0] ?? 'PLNT')
+        .slice(0, 4)
+        .toUpperCase();
 
   const PriceIcon =
     line.price_source === 'customer' ? Tag : line.price_source === 'override' ? Edit3 : FileText;
@@ -1071,8 +1090,25 @@ function LineRow({ line, plant, variant, supplier, cost, onUpdate, onRemove }: L
               {secondary}
             </p>
           )}
-          {/* Supplier — eyebrow */}
-          {supplier && (
+          {/* Eyebrow — ΠΡΟΧΕΙΡΟ badge wins over supplier when the line is
+              a draft (either freshly-typed via FreeTextLineSheet OR a
+              catalogue row whose status='draft' the rep is reusing). */}
+          {isDraft ? (
+            <p
+              className="text-eyebrow"
+              style={{
+                fontSize: 9,
+                marginTop: 5,
+                color: 'var(--clay)',
+                letterSpacing: '0.15em',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 4,
+              }}
+            >
+              <span aria-hidden="true">⚠</span> ΠΡΟΧΕΙΡΟ — ΕΚΤΟΣ ΚΑΤΑΛΟΓΟΥ
+            </p>
+          ) : supplier ? (
             <p
               className="text-eyebrow"
               style={{
@@ -1087,7 +1123,7 @@ function LineRow({ line, plant, variant, supplier, cost, onUpdate, onRemove }: L
             >
               {supplier}
             </p>
-          )}
+          ) : null}
           {/* Size — mono uppercase */}
           {size && (
             <p
@@ -1136,60 +1172,62 @@ function LineRow({ line, plant, variant, supplier, cost, onUpdate, onRemove }: L
         </div>
       )}
 
-      {/* Price area — Cost (read-only) + Sell (editable input) side by side.
-          The sell input is always editable: no separate edit mode, no
-          tap-to-reveal. Margin % computed from the cost on the left. */}
+      {/* Price area — Cost (read-only) + Sell (editable input) side by side
+          for catalogue lines. Drafts have no supplier cost, so the cost
+          column is suppressed and the sell input takes the full width. */}
       <div
         style={{
           display: 'grid',
-          gridTemplateColumns: '1fr 1.2fr',
+          gridTemplateColumns: isDraft ? '1fr' : '1fr 1.2fr',
           gap: 12,
           marginTop: 4,
           paddingTop: 12,
           borderTop: '1px dashed rgba(63,75,70,0.10)',
         }}
       >
-        {/* Cost column */}
-        <div>
-          <div className="text-eyebrow" style={{ fontSize: 9, marginBottom: 4 }}>
-            Κόστος
-          </div>
-          {cost != null ? (
-            <>
-              <div
-                className="font-mono-meta"
-                style={{ fontSize: 14, fontWeight: 500, color: 'var(--ink-700)' }}
-              >
-                {fmtEUR(cost)}
-              </div>
-              {(() => {
-                const m = marginPct(line.unit_price, cost);
-                if (m == null) return null;
-                const isLoss = m < 0;
-                const isThin = !isLoss && m < 15;
-                const color = isLoss ? 'var(--clay)' : isThin ? 'var(--honey)' : 'var(--sage-600)';
-                return (
-                  <div
-                    className="font-mono-meta"
-                    style={{ fontSize: 10, color, marginTop: 3, fontWeight: 500 }}
-                  >
-                    {m >= 0 ? '+' : ''}{m.toFixed(0)}% margin
-                  </div>
-                );
-              })()}
-            </>
-          ) : (
-            <div
-              style={{
-                fontSize: 13,
-                color: 'var(--ink-300)',
-                fontFamily: 'var(--font-mono)',
-              }}
-            >
-              —
+        {/* Cost column — hidden for drafts (no supplier cost exists). */}
+        {!isDraft && (
+          <div>
+            <div className="text-eyebrow" style={{ fontSize: 9, marginBottom: 4 }}>
+              Κόστος
             </div>
-          )}
-        </div>
+            {cost != null ? (
+              <>
+                <div
+                  className="font-mono-meta"
+                  style={{ fontSize: 14, fontWeight: 500, color: 'var(--ink-700)' }}
+                >
+                  {fmtEUR(cost)}
+                </div>
+                {(() => {
+                  const m = marginPct(line.unit_price, cost);
+                  if (m == null) return null;
+                  const isLoss = m < 0;
+                  const isThin = !isLoss && m < 15;
+                  const color = isLoss ? 'var(--clay)' : isThin ? 'var(--honey)' : 'var(--sage-600)';
+                  return (
+                    <div
+                      className="font-mono-meta"
+                      style={{ fontSize: 10, color, marginTop: 3, fontWeight: 500 }}
+                    >
+                      {m >= 0 ? '+' : ''}{m.toFixed(0)}% margin
+                    </div>
+                  );
+                })()}
+              </>
+            ) : (
+              <div
+                style={{
+                  fontSize: 13,
+                  color: 'var(--ink-300)',
+                  fontFamily: 'var(--font-mono)',
+                }}
+              >
+                —
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Sell column — actual input */}
         <div>
