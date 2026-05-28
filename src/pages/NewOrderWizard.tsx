@@ -37,9 +37,8 @@ const STEP_LABELS = ['Πελάτης', 'Στοιχεία', 'Γραμμές', 'Έ
 // free-text-line flow (the wizard now supports adding plants that aren't
 // in the catalogue; those carry an extra `draft: {name, size}` field).
 import type { DraftLine, PriceSource } from '@/lib/draft-line';
-import { draftLineToPayload } from '@/lib/draft-line';
-// NOTE: makeLocalDraftId imported in Task 2.6 when FreeTextLineSheet
-// wiring lands.
+import { draftLineToPayload, makeLocalDraftId } from '@/lib/draft-line';
+import FreeTextLineSheet, { type FreeTextLineResult } from '@/components/FreeTextLineSheet';
 
 /** Shape of location.state.duplicate passed by the OrderDetail "Επανάληψη"
  *  button. Used to seed a fresh wizard draft from an existing order without
@@ -469,6 +468,9 @@ function Step3Lines({
   const [query, setQuery] = useState('');
   // The variant currently being configured in the AddLineSheet. null = closed.
   const [configuringVariant, setConfiguringVariant] = useState<Variant | null>(null);
+  // FreeTextLineSheet open state. Triggered by tapping "+ Νέο φυτό εκτός
+  // καταλόγου" at the bottom of sparse search results.
+  const [freeTextOpen, setFreeTextOpen] = useState(false);
 
   // When the user opens the plant-search sheet, invalidate the cached
   // catalog so a freshly-created plant/variant in the bloom-crm desktop
@@ -572,6 +574,28 @@ function Step3Lines({
     onChange([...lines, next]);
     setConfiguringVariant(null);
     // Leave the search sheet open with its query — user can keep adding.
+  }
+
+  /** Commit handler — fired by FreeTextLineSheet when the rep adds a
+   *  free-text (uncatalogued) line. Appends a DraftLine with .draft set;
+   *  draftLineToPayload will emit {draft: {name, size}} at submit time
+   *  so the server creates plants+variants rows with status='draft'. */
+  function commitFreeTextLine(result: FreeTextLineResult) {
+    const next: DraftLine = {
+      variant_id: makeLocalDraftId(lines.length),
+      qty: result.qty,
+      unit_price: result.unit_price,
+      price_source: 'override',
+      vat_rate: result.vat_rate,
+      description: result.description,
+      draft: { name: result.name, size: result.size },
+    };
+    onChange([...lines, next]);
+    setFreeTextOpen(false);
+    // Close the underlying plant-search sheet too — the rep just added
+    // their off-catalogue line, they're done searching for this round.
+    setSheetOpen(false);
+    setQuery('');
   }
 
   function updateLine(variantId: string, patch: Partial<DraftLine>) {
@@ -893,6 +917,42 @@ function Step3Lines({
               ))}
             </div>
           )}
+
+          {/* Free-text fallback — appears when the search query is non-trivial
+              AND results are sparse. Hidden when the rep is just browsing
+              (many matches) to avoid accidental taps. The query is echoed
+              into the link label so the rep doesn't retype it. */}
+          {query.trim().length >= 2 && filtered.length < 5 && (
+            <button
+              type="button"
+              onClick={() => setFreeTextOpen(true)}
+              className="ios-tap"
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'flex-start',
+                gap: 4,
+                width: '100%',
+                padding: '14px 16px',
+                marginTop: 12,
+                background: 'rgba(214,161,78,0.06)',
+                border: '1px dashed rgba(214,161,78,0.35)',
+                borderRadius: 14,
+                textAlign: 'left',
+                color: 'var(--ink-700)',
+              }}
+            >
+              <div className="text-eyebrow" style={{ fontSize: 9, color: 'var(--honey)' }}>
+                Εκτός καταλόγου
+              </div>
+              <div style={{ fontSize: 14, fontWeight: 500 }}>
+                + Νέο φυτό: «{query.trim()}»
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--ink-500)' }}>
+                Το όνομα μπαίνει αυτόματα στη φόρμα.
+              </div>
+            </button>
+          )}
         </div>
       </FullScreenSheet>
 
@@ -912,6 +972,18 @@ function Step3Lines({
         }
         onClose={() => setConfiguringVariant(null)}
         onAdd={commitConfiguredLine}
+      />
+
+      {/* Free-text-line sheet — opens above the search modal when the rep
+          taps "+ Νέο φυτό εκτός καταλόγου". Pre-fills the Όνομα input
+          with the search query. Commit appends a DraftLine with .draft
+          set; the server creates plants+variants rows with status='draft'
+          during the order submit transaction. */}
+      <FreeTextLineSheet
+        open={freeTextOpen}
+        initialName={query.trim()}
+        onClose={() => setFreeTextOpen(false)}
+        onAdd={commitFreeTextLine}
       />
     </div>
   );
