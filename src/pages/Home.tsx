@@ -92,11 +92,11 @@ export default function Home() {
           alignItems: 'stretch',
         }}
       >
-        <StatCol num={todayDeliveries} label="Σήμερα" sub="παραδόσεις" />
+        <StatCol num={todayDeliveries} label="Σήμερα" sub="παραδόσεις" to="/orders?delivery=today" />
         <div className="vhairline" style={{ margin: '0 8px' }} />
-        <StatCol num={preparingNow} label="Ετοιμασία" sub="τώρα" accent="var(--st-preparing)" />
+        <StatCol num={preparingNow} label="Ετοιμασία" sub="σε εξέλιξη" accent="var(--st-preparing)" to="/orders?status=PREPARING" />
         <div className="vhairline" style={{ margin: '0 8px' }} />
-        <StatCol num={tomorrowDeliveries} label="Αύριο" sub="παραδόσεις" />
+        <StatCol num={tomorrowDeliveries} label="Αύριο" sub="παραδόσεις" to="/orders?delivery=tomorrow" />
       </div>
 
       {/* New order CTA */}
@@ -193,14 +193,20 @@ function StatCol({
   label,
   sub,
   accent,
+  to,
 }: {
   num: number;
   label: string;
   sub: string;
   accent?: string;
+  /** Optional deep-link target. When set the whole column becomes a Link
+   *  that navigates to a pre-filtered Orders view. The chevron is hidden
+   *  on small numbers — the affordance comes from the `ios-tap` press
+   *  animation + cursor:pointer. */
+  to?: string;
 }) {
-  return (
-    <div style={{ flex: 1, padding: '0 4px' }}>
+  const inner = (
+    <>
       <div
         className="font-mono-meta"
         style={{
@@ -215,6 +221,15 @@ function StatCol({
       </div>
       <div style={{ fontSize: 12, color: 'var(--ink-900)', fontWeight: 500 }}>{label}</div>
       <div style={{ fontSize: 11, color: 'var(--ink-500)', marginTop: 1 }}>{sub}</div>
-    </div>
+    </>
   );
+
+  if (to) {
+    return (
+      <Link to={to} className="ios-tap" style={{ flex: 1, padding: '0 4px', display: 'block' }}>
+        {inner}
+      </Link>
+    );
+  }
+  return <div style={{ flex: 1, padding: '0 4px' }}>{inner}</div>;
 }

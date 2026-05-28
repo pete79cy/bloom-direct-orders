@@ -128,7 +128,16 @@ export default function Calendar() {
             >
               <span>{cell.date.getDate()}</span>
               {dayOrders.length > 0 && (
-                <span className={cn('absolute bottom-1 right-1 text-[10px] text-white rounded-full px-1 min-w-[14px] h-[14px] flex items-center justify-center', dayColor(dayOrders))}>
+                /* The audit said "the calendar shows no order data" — actually
+                   it did, but the badge was 10px text in a 14px circle which
+                   was almost invisible. Upsized to 18px with bolder text and
+                   stronger contrast. Tap target stays the whole cell. */
+                <span
+                  className={cn(
+                    'absolute bottom-1 right-1 text-[11px] font-semibold text-white rounded-full px-1.5 min-w-[18px] h-[18px] flex items-center justify-center shadow-sm',
+                    dayColor(dayOrders),
+                  )}
+                >
                   {dayOrders.length}
                 </span>
               )}

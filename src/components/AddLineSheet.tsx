@@ -21,6 +21,9 @@ export interface AddLineResult {
   /** True when the user manually typed a number that differs from the
    *  initial default. The wizard uses this to label the price source. */
   priceOverridden: boolean;
+  /** Per-line free-text note ("Χωρίς γλάστρα", "Ύψος 80cm+"). Empty
+   *  string when the user didn't type anything. */
+  description: string;
 }
 
 interface Props {
@@ -86,6 +89,7 @@ export default function AddLineSheet({
   const [unitPrice, setUnitPrice] = useState(0);
   const [vatRate, setVatRate] = useState<VatRate>(DEFAULT_VAT_RATE);
   const [initialPrice, setInitialPrice] = useState(0);
+  const [description, setDescription] = useState('');
 
   useEffect(() => {
     if (!open || !variant) return;
@@ -94,6 +98,7 @@ export default function AddLineSheet({
     setUnitPrice(seed);
     setVatRate(DEFAULT_VAT_RATE);
     setInitialPrice(seed);
+    setDescription('');
   }, [open, variant, customerPrice]);
 
   if (!variant) return null;
@@ -127,6 +132,7 @@ export default function AddLineSheet({
       unit_price: unitPrice,
       vat_rate: vatRate,
       priceOverridden: Math.abs(unitPrice - initialPrice) > 0.0001,
+      description: description.trim(),
     });
   }
 
@@ -256,6 +262,43 @@ export default function AddLineSheet({
             Ποσότητα
           </div>
           <QtyStepper value={qty} min={1} onChange={setQty} />
+        </div>
+
+        {/* Per-line note — kept optional + visually subtle so it doesn't
+            slow down the speed-of-add flow when the user has nothing to say.
+            Maps to order_lines.description on submit. */}
+        <div style={{ marginBottom: 20 }}>
+          <div
+            className="text-eyebrow"
+            style={{
+              fontSize: 9, marginBottom: 6,
+              display: 'flex', justifyContent: 'space-between',
+            }}
+          >
+            <span>Σημείωση</span>
+            <span style={{ color: 'var(--ink-300)', letterSpacing: 0, textTransform: 'none', fontSize: 10 }}>
+              προαιρετικό
+            </span>
+          </div>
+          <textarea
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder="π.χ. χωρίς γλάστρα, ύψος 80cm+, ανθισμένα μόνο…"
+            rows={2}
+            style={{
+              width: '100%',
+              padding: '10px 12px',
+              background: 'rgba(255,255,255,0.85)',
+              border: '1px solid rgba(63,75,70,0.10)',
+              borderRadius: 12,
+              fontSize: 14,
+              color: 'var(--ink-900)',
+              outline: 'none',
+              resize: 'none',
+              fontFamily: 'inherit',
+              lineHeight: 1.4,
+            }}
+          />
         </div>
 
         {/* VAT */}

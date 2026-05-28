@@ -1,8 +1,8 @@
-import { useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { useEffect, useMemo, useState } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
 import { Search } from 'lucide-react';
 import { useOrders, useCustomers } from '@/lib/queries';
-import { fmtShortDate } from '@/lib/format';
+import { fmtShortDate, isoToday, addDays } from '@/lib/format';
 import StatusBadge from '@/components/StatusBadge';
 import BottomNav from '@/components/BottomNav';
 import type { OrderStatus } from '@/types';
@@ -25,6 +25,31 @@ export default function OrdersList() {
   const { data: customers = [] } = useCustomers();
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<'ALL' | OrderStatus>('ALL');
+  // Optional delivery_date narrowing — set when the user lands here via
+  // a tappable Home stat ("Σήμερα" / "Αύριο"). Null = no narrowing.
+  const [deliveryDateFilter, setDeliveryDateFilter] = useState<string | null>(null);
+
+  // Read URL query params on mount and translate them into initial filter
+  // state. Home's stat tiles link here with ?status=PREPARING /
+  // ?delivery=today / ?delivery=tomorrow. We clear the params after
+  // consuming them so back-button navigation feels clean.
+  const [searchParams, setSearchParams] = useSearchParams();
+  useEffect(() => {
+    const status = searchParams.get('status');
+    const delivery = searchParams.get('delivery');
+    if (status && FILTER_DEFS.some((f) => f.id === status)) {
+      setFilter(status as OrderStatus);
+    }
+    if (delivery === 'today') {
+      setDeliveryDateFilter(isoToday());
+    } else if (delivery === 'tomorrow') {
+      setDeliveryDateFilter(addDays(isoToday(), 1));
+    }
+    if (status || delivery) {
+      setSearchParams({}, { replace: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const customerLabel = (id: string) => {
     const c = customers.find((x) => x.id === id);
@@ -44,11 +69,13 @@ export default function OrdersList() {
     return orders.filter((o) => {
       if (filter === 'ALL' && HIDDEN_FROM_DEFAULT.includes(o.status)) return false;
       if (filter !== 'ALL' && o.status !== filter) return false;
+      // Delivery-date narrowing from URL param (Σήμερα / Αύριο deep-links).
+      if (deliveryDateFilter && o.delivery_date !== deliveryDateFilter) return false;
       if (!q) return true;
       const label = customerLabel(o.customer_id).toLowerCase();
       return label.includes(q) || o.order_number.toLowerCase().includes(q);
     });
-  }, [orders, customers, filter, search]);
+  }, [orders, customers, filter, search, deliveryDateFilter]);
 
   const today = new Date().toLocaleDateString('el-GR', { day: 'numeric', month: 'long' });
   const activeCount = counts.ALL ?? 0;
@@ -66,6 +93,43 @@ export default function OrdersList() {
           Παραγγελίες
         </h1>
       </header>
+
+      {/* Active delivery-date narrowing banner — shows when the user landed
+          here via a Home stat tile (Σήμερα / Αύριο). A small × clears it. */}
+      {deliveryDateFilter && (
+        <div style={{ padding: '12px 20px 0' }}>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '8px 12px',
+              background: 'var(--sage-100)',
+              color: 'var(--sage-800)',
+              borderRadius: 10,
+              fontSize: 13,
+            }}
+          >
+            <span>
+              Φιλτράρισμα: παράδοση {deliveryDateFilter === isoToday() ? 'σήμερα' : 'αύριο'}
+            </span>
+            <button
+              type="button"
+              onClick={() => setDeliveryDateFilter(null)}
+              aria-label="Καθαρισμός φίλτρου"
+              style={{
+                width: 24, height: 24, borderRadius: 999,
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                background: 'transparent',
+                color: 'var(--sage-800)',
+                fontWeight: 600,
+              }}
+            >
+              ×
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Search */}
       <div style={{ padding: '18px 20px 0', position: 'relative' }}>
@@ -92,8 +156,12 @@ export default function OrdersList() {
         />
       </div>
 
-      {/* Filter chips with monospace counts */}
-      <div style={{ padding: '14px 0 0' }}>
+      {/* Filter chips with monospace counts.
+          .chip-strip wrapper renders a right-edge gradient fade so the user
+          can see there are more filters off-screen (otherwise hidden chips
+          like Τιμολογημένες / Ακυρωμένες are visually clipped without any
+          affordance to scroll). */}
+      <div className="chip-strip" style={{ padding: '14px 0 0' }}>
         <div
           style={{
             display: 'flex',
@@ -101,6 +169,7 @@ export default function OrdersList() {
             padding: '0 20px',
             overflowX: 'auto',
             flexWrap: 'nowrap',
+            scrollbarWidth: 'none',
           }}
         >
           {FILTER_DEFS.map((f) => {

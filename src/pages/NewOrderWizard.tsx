@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { useQueryClient } from '@tanstack/react-query';
 import {
@@ -41,16 +41,54 @@ interface DraftLine {
   unit_price: number;
   price_source: PriceSource;
   vat_rate: VatRate;
+  /** Per-line free-text note. Maps to order_lines.description on submit.
+   *  Examples: "Χωρίς γλάστρα", "Ύψος 80cm+", "Ανθισμένα μόνο". */
+  description: string;
+}
+
+/** Shape of location.state.duplicate passed by the OrderDetail "Επανάληψη"
+ *  button. Used to seed a fresh wizard draft from an existing order without
+ *  refetching anything from the server. */
+interface DuplicateSeed {
+  customer: Customer | null;
+  lines: Array<{
+    variant_id: string;
+    qty: number;
+    unit_price: number;
+    vat_rate: number;
+    description: string;
+  }>;
+  fromOrderNumber?: string;
 }
 
 export default function NewOrderWizard() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [step, setStep] = useState(0);
 
-  const [customer, setCustomer] = useState<Customer | null>(null);
+  // If we arrived via "Επανάληψη παραγγελίας", seed the initial state from
+  // location.state.duplicate so the wizard opens with customer + lines
+  // already populated. Delivery date stays fresh (3 days out) and notes
+  // start empty — both belong to the NEW order's context, not the source's.
+  const duplicate = (location.state as { duplicate?: DuplicateSeed } | null)?.duplicate ?? null;
+
+  const [customer, setCustomer] = useState<Customer | null>(duplicate?.customer ?? null);
   const [deliveryDate, setDeliveryDate] = useState(addDays(isoToday(), 3));
   const [notes, setNotes] = useState('');
-  const [lines, setLines] = useState<DraftLine[]>([]);
+  const [lines, setLines] = useState<DraftLine[]>(() =>
+    (duplicate?.lines ?? []).map((l) => ({
+      variant_id: l.variant_id,
+      qty: l.qty,
+      unit_price: l.unit_price,
+      // We can't reliably reclassify the price source on duplicate (the
+      // customer's current price might differ from the historical line) —
+      // mark all as 'override' so the user sees the honey-coloured ⚠️
+      // indicator and audits before submitting.
+      price_source: 'override' as PriceSource,
+      vat_rate: (l.vat_rate === 5 || l.vat_rate === 19 ? l.vat_rate : 19) as VatRate,
+      description: l.description || '',
+    })),
+  );
 
   const { data: customers = [] } = useCustomers();
   const { data: plants = [] } = usePlants();
@@ -81,6 +119,24 @@ export default function NewOrderWizard() {
     () => buildCostMap(supplierProducts, supplierPrices),
     [supplierProducts, supplierPrices],
   );
+
+  // Duplicate-mode bootstrap: jump straight to Step 2 (Στοιχεία) since the
+  // customer is preset, and surface a toast so the user knows this is a
+  // duplicated draft. The dependency on `duplicate` runs this once on mount.
+  useEffect(() => {
+    if (!duplicate) return;
+    setStep(1);
+    const n = duplicate.lines.length;
+    toast.success(
+      duplicate.fromOrderNumber
+        ? `Επανάληψη ${duplicate.fromOrderNumber} · ${n} γραμμές`
+        : `Επανάληψη παραγγελίας · ${n} γραμμές`,
+      { description: 'Έλεγξε τις τιμές πριν την αποθήκευση.' },
+    );
+    // Clear location.state so a page reload doesn't re-trigger the seed.
+    navigate(location.pathname, { replace: true, state: {} });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Defensive: clear any leaked body-lock when the wizard mounts. If a
   // sheet on a previous screen failed to restore document.body.style
@@ -516,6 +572,7 @@ function Step3Lines({
       unit_price: result.unit_price,
       price_source: finalSource,
       vat_rate: result.vat_rate,
+      description: result.description,
     };
     onChange([...lines, next]);
     setConfiguringVariant(null);
@@ -564,7 +621,46 @@ function Step3Lines({
       </div>
 
       {lines.length === 0 ? (
-        <p className="text-center text-ink-500 py-8 text-sm">Καμία γραμμή ακόμη</p>
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            padding: '32px 20px 24px',
+            textAlign: 'center',
+          }}
+        >
+          <div
+            aria-hidden="true"
+            style={{
+              width: 56,
+              height: 56,
+              borderRadius: 999,
+              background: 'var(--cream-200)',
+              color: 'var(--sage-700)',
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              marginBottom: 12,
+            }}
+          >
+            <LeafMark size={28} />
+          </div>
+          <p
+            className="font-display"
+            style={{
+              fontStyle: 'italic',
+              fontSize: 16,
+              color: 'var(--ink-700)',
+              marginBottom: 4,
+            }}
+          >
+            Καμία γραμμή ακόμη
+          </p>
+          <p style={{ fontSize: 12, color: 'var(--ink-500)', maxWidth: 240, lineHeight: 1.45 }}>
+            Πάτα <strong style={{ color: 'var(--sage-700)' }}>+ Προσθήκη φυτού</strong> για να αρχίσεις την παραγγελία.
+          </p>
+        </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {lines.map((l) => {
@@ -951,6 +1047,28 @@ function LineRow({ line, plant, variant, supplier, cost, onUpdate, onRemove }: L
         </button>
       </div>
 
+      {/* Per-line note (description) — shown only when set. The 💬 marker
+          makes it scannable in a long line list so the warehouse picker
+          knows immediately which lines have special instructions. */}
+      {line.description && line.description.trim() && (
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'flex-start',
+            gap: 6,
+            padding: '8px 10px',
+            background: 'var(--cream-200)',
+            borderRadius: 10,
+            marginTop: 2,
+          }}
+        >
+          <span style={{ fontSize: 12, lineHeight: 1.2, marginTop: 1 }} aria-hidden="true">💬</span>
+          <p style={{ fontSize: 12, color: 'var(--ink-700)', lineHeight: 1.4, flex: 1 }}>
+            {line.description}
+          </p>
+        </div>
+      )}
+
       {/* Price area — Cost (read-only) + Sell (editable input) side by side.
           The sell input is always editable: no separate edit mode, no
           tap-to-reveal. Margin % computed from the cost on the left. */}
@@ -1093,6 +1211,7 @@ function Step4Review({
           unit_price: l.unit_price,
           vat_rate: l.vat_rate,
           line_no: i + 1,
+          description: l.description || null,
         })),
       });
       toast.success('Παραγγελία αποθηκεύτηκε');

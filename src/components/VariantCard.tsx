@@ -180,9 +180,20 @@ export default function VariantCard({
           ) : (
             <span
               className="text-eyebrow"
-              style={{ fontSize: 9, color: 'var(--ink-300)' }}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 3,
+                fontSize: 9,
+                color: 'var(--honey)',
+                background: 'rgba(214, 161, 78, 0.10)',
+                padding: '2px 6px',
+                borderRadius: 6,
+                letterSpacing: '0.08em',
+              }}
+              title="Δεν έχει οριστεί προεπιλεγμένη τιμή — θα την εισάγεις στο επόμενο βήμα."
             >
-              No price
+              Χωρίς τιμή
             </span>
           )}
           {/* Cost — small, muted, beneath the sell price */}

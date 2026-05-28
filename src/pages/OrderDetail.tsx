@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, FileText } from 'lucide-react';
+import { ArrowLeft, FileText, Repeat } from 'lucide-react';
 import { toast } from 'sonner';
 import { useOrder, usePatchOrder } from '@/lib/queries';
 import { fmtEUR, fmtLongDate } from '@/lib/format';
@@ -53,6 +53,10 @@ export default function OrderDetail() {
   const patch = usePatchOrder();
   const [pdfBusy, setPdfBusy] = useState(false);
   const [pdfSheetOpen, setPdfSheetOpen] = useState(false);
+  // The cancel-confirm overlay. Decoupled from the underlying button so we
+  // don't accidentally swap state between the "in flight" patch mutation
+  // and the "user is still deciding" pre-confirm state.
+  const [confirmCancelOpen, setConfirmCancelOpen] = useState(false);
 
   if (isLoading || !data) {
     return <div className="p-4 text-ink-500">Φόρτωση…</div>;
@@ -141,6 +145,47 @@ export default function OrderDetail() {
           }}
         >
           <ArrowLeft size={18} />
+        </button>
+
+        {/* Repeat-order action — copies this order's customer + lines into a
+            fresh wizard draft. B2B plant customers tend to re-order the same
+            mix weekly/monthly; this turns a 4-step wizard into a
+            review-and-submit. Delivery date + order notes are intentionally
+            NOT carried over (they belong to the new fulfilment context). */}
+        <button
+          type="button"
+          onClick={() => {
+            navigate('/orders/new', {
+              state: {
+                duplicate: {
+                  customer: data?.customer ?? null,
+                  lines: (data?.lines ?? []).map((l) => ({
+                    variant_id: l.variant_id,
+                    qty: l.qty,
+                    unit_price: l.unit_price,
+                    vat_rate: l.vat_rate ?? 19,
+                    description: l.description ?? '',
+                  })),
+                  fromOrderNumber: data?.order.order_number,
+                },
+              },
+            });
+          }}
+          aria-label="Επανάληψη παραγγελίας"
+          className="ios-tap"
+          style={{
+            marginLeft: 'auto',
+            display: 'inline-flex', alignItems: 'center', gap: 6,
+            height: 36, padding: '0 12px',
+            borderRadius: 999,
+            background: 'var(--sage-100)',
+            color: 'var(--sage-800)',
+            fontSize: 12,
+            fontWeight: 500,
+          }}
+        >
+          <Repeat size={14} strokeWidth={1.8} />
+          Επανάληψη
         </button>
       </header>
 
@@ -239,12 +284,22 @@ export default function OrderDetail() {
           }}
         >
           {lines.map((l, i) => {
+            // Plant name resolution: scientific name first, fall back to the
+            // free-text description only when there's no plant lookup
+            // (legacy / detached lines). We check for a separate per-line
+            // *note* further down to avoid double-displaying a description
+            // that's being used as the plant-name fallback.
+            const hasPlantName = !!prettyScientificName(l.plant_scientific_name);
             const name = prettyScientificName(l.plant_scientific_name) || l.description || l.variant_id;
             const size = cleanSizeSummary(l.size_summary);
+            // Only show the per-line note when there IS a real plant name —
+            // otherwise the description is already the title and would render
+            // twice.
+            const note = hasPlantName ? l.description?.trim() : null;
             return (
               <div key={l.id}>
                 {i > 0 && <div className="hairline" style={{ margin: '0 16px' }} />}
-                <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
+                <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'flex-start', gap: 12 }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <p
                       className="font-display"
@@ -264,8 +319,26 @@ export default function OrderDetail() {
                     >
                       {size ? `${size} · ` : ''}{l.qty} × {fmtEUR(l.unit_price)}
                     </p>
+                    {note && (
+                      <div
+                        style={{
+                          display: 'flex',
+                          alignItems: 'flex-start',
+                          gap: 5,
+                          marginTop: 6,
+                          padding: '6px 8px',
+                          background: 'var(--cream-200)',
+                          borderRadius: 8,
+                        }}
+                      >
+                        <span style={{ fontSize: 11, lineHeight: 1.2 }} aria-hidden="true">💬</span>
+                        <p style={{ fontSize: 11, color: 'var(--ink-700)', lineHeight: 1.4, flex: 1 }}>
+                          {note}
+                        </p>
+                      </div>
+                    )}
                   </div>
-                  <span className="font-mono-meta" style={{ fontSize: 13, fontWeight: 500 }}>
+                  <span className="font-mono-meta" style={{ fontSize: 13, fontWeight: 500, marginTop: 2 }}>
                     {fmtEUR(lineSubtotal(l))}
                   </span>
                 </div>
@@ -334,7 +407,7 @@ export default function OrderDetail() {
               <button
                 type="button"
                 disabled={patch.isPending}
-                onClick={() => changeStatus(cancelAction)}
+                onClick={() => setConfirmCancelOpen(true)}
                 style={{
                   height: 46,
                   padding: '0 18px',
@@ -342,7 +415,8 @@ export default function OrderDetail() {
                   background: '#fff',
                   border: '1px solid rgba(63,75,70,0.10)',
                   fontSize: 14,
-                  color: 'var(--ink-700)',
+                  color: 'var(--accent-clay)',
+                  fontWeight: 500,
                 }}
               >
                 Ακύρωση
@@ -350,6 +424,86 @@ export default function OrderDetail() {
             )}
           </div>
         </section>
+      )}
+
+      {/* Cancel-order confirmation overlay.
+          The primary action button ("→ Έτοιμη" etc) sits inches from the
+          destructive "Ακύρωση". A misfire on a small phone was identified
+          in the UX audit as a real safety risk — wrapping the cancel in an
+          explicit confirm avoids accidental data loss. */}
+      {confirmCancelOpen && cancelAction && (
+        <div
+          onClick={() => setConfirmCancelOpen(false)}
+          style={{
+            position: 'fixed', inset: 0, zIndex: 1500,
+            background: 'rgba(0,0,0,0.45)',
+            display: 'flex', alignItems: 'flex-end',
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="pb-safe"
+            style={{
+              width: '100%',
+              background: '#fff',
+              borderTopLeftRadius: 20,
+              borderTopRightRadius: 20,
+              padding: '20px 20px 16px',
+            }}
+          >
+            <div className="text-eyebrow" style={{ marginBottom: 8 }}>Επιβεβαίωση</div>
+            <h3
+              className="font-display"
+              style={{
+                fontStyle: 'italic',
+                fontSize: 22,
+                fontWeight: 500,
+                color: 'var(--ink-900)',
+                marginBottom: 6,
+                lineHeight: 1.15,
+              }}
+            >
+              Ακύρωση παραγγελίας;
+            </h3>
+            <p style={{ fontSize: 13, color: 'var(--ink-500)', lineHeight: 1.5, marginBottom: 18 }}>
+              Η παραγγελία <strong style={{ color: 'var(--ink-700)' }}>{order.order_number}</strong> θα
+              σημανθεί ως ακυρωμένη. Η ενέργεια δεν επιστρέφεται από το PWA — θα χρειαστεί παρέμβαση
+              από το desktop bloom-crm για επαναφορά.
+            </p>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button
+                type="button"
+                onClick={() => setConfirmCancelOpen(false)}
+                style={{
+                  flex: 1, height: 48, borderRadius: 14,
+                  background: '#fff',
+                  border: '1px solid rgba(63,75,70,0.12)',
+                  fontSize: 14, fontWeight: 500,
+                  color: 'var(--ink-700)',
+                }}
+              >
+                Όχι, πίσω
+              </button>
+              <button
+                type="button"
+                disabled={patch.isPending}
+                onClick={() => {
+                  setConfirmCancelOpen(false);
+                  void changeStatus(cancelAction);
+                }}
+                style={{
+                  flex: 1, height: 48, borderRadius: 14,
+                  background: 'var(--accent-clay)',
+                  border: 'none',
+                  fontSize: 14, fontWeight: 500,
+                  color: '#fff',
+                }}
+              >
+                Ναι, ακύρωση
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

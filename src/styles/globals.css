@@ -200,16 +200,31 @@
     border: 1px solid rgba(63,107,92,0.20);
   }
 
-  /* Chip — for filters and selectors */
+  /* Chip — for filters and selectors.
+     Min 44px height for WCAG 2.5.5 touch-target. Wider padding so labels
+     like "Παραδομένες" don't crowd the rounded corner. */
   .chip {
-    flex: 0 0 auto; padding: 0 14px; height: 32px;
-    border-radius: 999px; font-size: 13px; font-weight: 500;
+    flex: 0 0 auto; padding: 0 16px; min-height: 44px;
+    border-radius: 999px; font-size: 14px; font-weight: 500;
     background: rgba(255,255,255,0.85); color: var(--ink-700);
     border: 1px solid rgba(63,75,70,0.10);
     display: inline-flex; align-items: center; gap: 6px;
   }
   .chip-active {
     background: var(--sage-700); color: var(--cream-50); border-color: var(--sage-700);
+  }
+  /* Scroll affordance: right-edge fade on horizontally-scrolling chip
+     strips. Apply on the wrapper that contains overflow-x: auto chips. */
+  .chip-strip {
+    position: relative;
+  }
+  .chip-strip::after {
+    content: '';
+    position: absolute;
+    top: 0; right: 0; bottom: 0;
+    width: 28px;
+    pointer-events: none;
+    background: linear-gradient(to right, rgba(242, 235, 219, 0), var(--cream-100) 85%);
   }
 
   /* iOS shell wrapper (kept for MobileSheet portal) */
