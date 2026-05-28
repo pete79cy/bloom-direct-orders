@@ -118,7 +118,7 @@ export default function PriceInput({
             fontFamily: 'var(--font-mono)',
             fontSize: 14,
             fontWeight: 500,
-            color: warn ? 'var(--accent-clay)' : 'var(--ink-900)',
+            color: warn ? 'var(--clay)' : 'var(--ink-900)',
             textAlign: 'right',
             letterSpacing: 0,
             padding: 0,

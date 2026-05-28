@@ -1100,7 +1100,7 @@ function LineRow({ line, plant, variant, supplier, cost, onUpdate, onRemove }: L
                 if (m == null) return null;
                 const isLoss = m < 0;
                 const isThin = !isLoss && m < 15;
-                const color = isLoss ? 'var(--accent-clay)' : isThin ? 'var(--honey)' : 'var(--sage-600)';
+                const color = isLoss ? 'var(--clay)' : isThin ? 'var(--honey)' : 'var(--sage-600)';
                 return (
                   <div
                     className="font-mono-meta"

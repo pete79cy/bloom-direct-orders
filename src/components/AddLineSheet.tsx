@@ -241,7 +241,7 @@ export default function AddLineSheet({
           {cost != null && unitPrice > 0 && (() => {
             const margin = ((unitPrice - cost) / cost) * 100;
             const color = margin < 0
-              ? 'var(--accent-clay)'
+              ? 'var(--clay)'
               : margin < 15
                 ? 'var(--honey)'
                 : 'var(--sage-600)';

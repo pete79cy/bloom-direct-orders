@@ -415,7 +415,7 @@ export default function OrderDetail() {
                   background: '#fff',
                   border: '1px solid rgba(63,75,70,0.10)',
                   fontSize: 14,
-                  color: 'var(--accent-clay)',
+                  color: 'var(--clay)',
                   fontWeight: 500,
                 }}
               >
@@ -493,7 +493,7 @@ export default function OrderDetail() {
                 }}
                 style={{
                   flex: 1, height: 48, borderRadius: 14,
-                  background: 'var(--accent-clay)',
+                  background: 'var(--clay)',
                   border: 'none',
                   fontSize: 14, fontWeight: 500,
                   color: '#fff',
