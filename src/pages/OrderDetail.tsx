@@ -307,6 +307,25 @@ export default function OrderDetail() {
                     >
                       {name}
                     </p>
+                    {/* ΠΡΟΧΕΙΡΟ marker — appears under lines whose joined
+                        variant still has status='draft' so the rep can
+                        confirm post-submit which lines landed as drafts. */}
+                    {l.variant_status === 'draft' && (
+                      <p
+                        className="text-eyebrow"
+                        style={{
+                          fontSize: 9,
+                          marginTop: 2,
+                          color: 'var(--clay)',
+                          letterSpacing: '0.15em',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 4,
+                        }}
+                      >
+                        <span aria-hidden="true">⚠</span> ΠΡΟΧΕΙΡΟ
+                      </p>
+                    )}
                     <p
                       className="font-mono-meta"
                       style={{
