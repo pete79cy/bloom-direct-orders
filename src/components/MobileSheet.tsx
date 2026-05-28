@@ -198,8 +198,17 @@ export function MobileSheet({
           borderTopRightRadius: 20,
           // When the keyboard is up, constrain the sheet to fit within the
           // shrunken visual viewport (with a 24px top breathing space).
-          // Otherwise fall back to the 88vh cap.
-          maxHeight: vvHeight !== null ? `${Math.max(160, vvHeight - 24)}px` : '88vh',
+          //
+          // Otherwise: use min(88vh, calc(100dvh - 24px)). The 88vh path is
+          // the established cap when there's no browser chrome eating into
+          // the viewport (e.g. installed PWA). 100dvh excludes iOS Safari's
+          // dynamic browser chrome (the bottom toolbar) so the sheet doesn't
+          // extend behind it on a regular Safari tab. min() picks whichever
+          // is smaller. Supported on iOS Safari 15.4+ (March 2022); older
+          // browsers gracefully ignore the calc() and fall back to 88vh.
+          maxHeight: vvHeight !== null
+            ? `${Math.max(160, vvHeight - 24)}px`
+            : 'min(88vh, calc(100dvh - 24px))',
           display: 'flex',
           flexDirection: 'column',
           paddingBottom: keyboardInset > 0 ? 0 : `env(safe-area-inset-bottom, 0px)`,
