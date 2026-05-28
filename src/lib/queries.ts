@@ -39,18 +39,22 @@ export function useCustomers() {
 }
 
 export function useVariants() {
+  // status=all → include 'draft' rows so they surface in the PWA plant search
+  // (rendered with a ΠΡΟΧΕΙΡΟ badge in VariantCard). Active-only would hide
+  // drafts until the desktop admin promotes them — defeating in-session reuse.
   return useQuery({
     queryKey: ['variants'],
     staleTime: TEN_MIN,
-    queryFn: () => apiFetch<Variant[]>('/api/variants'),
+    queryFn: () => apiFetch<Variant[]>('/api/variants?status=all'),
   });
 }
 
 export function usePlants() {
+  // See useVariants — same rationale for ?status=all.
   return useQuery({
     queryKey: ['plants'],
     staleTime: TEN_MIN,
-    queryFn: () => apiFetch<Plant[]>('/api/plants'),
+    queryFn: () => apiFetch<Plant[]>('/api/plants?status=all'),
   });
 }
 
@@ -123,8 +127,12 @@ export function useCustomerPrices(customerId: string | undefined) {
   });
 }
 
-export interface DirectOrderLinePayload {
-  variant_id: string;
+/** Common shape for every direct-order line. Each line ALSO carries either
+ *  a `variant_id` (existing catalogue row) or a `draft: {name, size?}`
+ *  (free-text line for a plant not in the catalogue — server creates
+ *  plants+variants rows with status='draft' on the fly). Exactly one of
+ *  the two must be present per line; the server enforces this with 400. */
+interface DirectOrderLineCommon {
   qty: number;
   unit_price: number;
   description?: string | null;
@@ -132,6 +140,10 @@ export interface DirectOrderLinePayload {
   vat_rate?: number | null;
   line_no?: number;
 }
+
+export type DirectOrderLinePayload =
+  | (DirectOrderLineCommon & { variant_id: string; draft?: undefined })
+  | (DirectOrderLineCommon & { variant_id?: undefined; draft: { name: string; size?: string } });
 
 export interface DirectOrderHeaderPayload {
   customer_id: string;
@@ -161,6 +173,12 @@ export function useCreateDirectOrder() {
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['orders'] });
+      // If the order contained any draft lines, the catalogue has new rows
+      // the rep may want to reuse later in the same session. Invalidate
+      // plants/variants too — the cost is negligible because both queries
+      // have a 10-min staleTime and refetch only on next access.
+      qc.invalidateQueries({ queryKey: ['plants'] });
+      qc.invalidateQueries({ queryKey: ['variants'] });
     },
   });
 }
