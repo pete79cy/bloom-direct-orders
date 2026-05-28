@@ -33,18 +33,13 @@ import type { Customer, Plant, Variant, CustomerPrice } from '@/types';
 
 const STEP_LABELS = ['Πελάτης', 'Στοιχεία', 'Γραμμές', 'Έλεγχος'];
 
-type PriceSource = 'customer' | 'default' | 'override';
-
-interface DraftLine {
-  variant_id: string;
-  qty: number;
-  unit_price: number;
-  price_source: PriceSource;
-  vat_rate: VatRate;
-  /** Per-line free-text note. Maps to order_lines.description on submit.
-   *  Examples: "Χωρίς γλάστρα", "Ύψος 80cm+", "Ανθισμένα μόνο". */
-  description: string;
-}
+// DraftLine moved to @/lib/draft-line so it can be tested + reused by the
+// free-text-line flow (the wizard now supports adding plants that aren't
+// in the catalogue; those carry an extra `draft: {name, size}` field).
+import type { DraftLine, PriceSource } from '@/lib/draft-line';
+import { draftLineToPayload } from '@/lib/draft-line';
+// NOTE: makeLocalDraftId imported in Task 2.6 when FreeTextLineSheet
+// wiring lands.
 
 /** Shape of location.state.duplicate passed by the OrderDetail "Επανάληψη"
  *  button. Used to seed a fresh wizard draft from an existing order without
@@ -1205,14 +1200,7 @@ function Step4Review({
           delivery_date: deliveryDate,
           notes: notes || null,
         },
-        lines: lines.map((l, i) => ({
-          variant_id: l.variant_id,
-          qty: l.qty,
-          unit_price: l.unit_price,
-          vat_rate: l.vat_rate,
-          line_no: i + 1,
-          description: l.description || null,
-        })),
+        lines: lines.map((l, i) => draftLineToPayload(l, i)),
       });
       toast.success('Παραγγελία αποθηκεύτηκε');
       navigate(`/orders/${res.orderId}`, { replace: true });
