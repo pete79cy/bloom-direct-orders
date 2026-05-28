@@ -41,10 +41,19 @@ export interface Customer {
   country: string | null;
 }
 
+/** Catalogue review states. Set per-row by bloom-crm.
+ *  - 'active'   normal catalogue row (default)
+ *  - 'draft'    auto-created by the PWA free-text-line flow; pending admin review
+ *  - 'archived' admin-rejected (kept for audit) */
+export type CatalogueStatus = 'active' | 'draft' | 'archived';
+
 export interface Plant {
   id: string;
   scientific_name: string;
   common_name: string | null;
+  /** Optional for backward-compatibility with cached payloads pre-dating
+   *  the status migration. Defaults to 'active' at the server. */
+  status?: CatalogueStatus;
 }
 
 export interface Variant {
@@ -64,6 +73,8 @@ export interface Variant {
   plant_type?: string | null;
   form?: string | null;
   grade?: string | null;
+  /** See Plant.status. */
+  status?: CatalogueStatus;
 }
 
 export interface Supplier {
@@ -100,6 +111,11 @@ export interface OrderLineEnriched extends OrderLine {
   plant_common_name: string | null;
   plant_scientific_name: string | null;
   size_summary: string | null;
+  /** Status of the joined variant. 'draft' triggers the ΠΡΟΧΕΙΡΟ badge on
+   *  the order detail line. Optional + nullable for resilience against
+   *  older orders cached before the enrichment shipped. */
+  variant_status?: CatalogueStatus | null;
+  plant_status?: CatalogueStatus | null;
 }
 
 // Rich response from GET /api/orders/:id
