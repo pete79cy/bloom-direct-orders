@@ -41,49 +41,79 @@ export default function PdfActionSheet({ open, onClose, busy, onGenerate }: Prop
 
   return (
     <MobileSheet open={open} onClose={onClose} title="Λήψη / Εκτύπωση">
-      <div style={{ padding: '8px 16px 16px' }}>
-        <Option
-          checked={modes.slip}
-          onToggle={() => toggle('slip')}
-          icon={<FileText size={18} color="var(--sage-700)" strokeWidth={1.5} />}
-          title="Δελτίο αποστολής"
-          subtitle="Χωρίς τιμές, με υπογραφές"
-        />
-        <Option
-          checked={modes.priced}
-          onToggle={() => toggle('priced')}
-          icon={<Tag size={18} color="var(--sage-700)" strokeWidth={1.5} />}
-          title="Με τιμές"
-          subtitle="Πλήρες δελτίο παράδοσης με ΦΠΑ"
-        />
-        <Option
-          checked={modes.visual}
-          onToggle={() => toggle('visual')}
-          icon={<ImageIcon size={18} color="var(--sage-700)" strokeWidth={1.5} />}
-          title="Visual list"
-          subtitle="Φωτογραφία ανά γραμμή για picker"
-        />
-
-        <button
-          type="button"
-          disabled={!canGenerate}
-          onClick={() => onGenerate(selected)}
-          className="btn-primary ios-tap"
-          style={{ marginTop: 14 }}
+      {/* Two-row flex layout: scrollable options + sticky commit bar.
+          On short viewports (iOS with the bottom Safari toolbar visible)
+          the submit button used to sit below the visible area; the user
+          could check all three modes and never see the button to tap. The
+          sticky bar guarantees the commit affordance is always reachable. */}
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          height: '100%',
+          minHeight: 0,
+        }}
+      >
+        <div
+          style={{
+            flex: 1,
+            minHeight: 0,
+            overflowY: 'auto',
+            padding: '8px 16px 12px',
+          }}
         >
-          {busy ? (
-            <>
-              <Loader2 size={16} color="var(--cream-50)" className="animate-spin" />
-              Δημιουργία…
-            </>
-          ) : selected.length === 1 ? (
-            'Λήψη / Κοινοποίηση'
-          ) : selected.length > 1 ? (
-            `Λήψη συνδυασμένου PDF (${selected.length})`
-          ) : (
-            'Επίλεξε τουλάχιστον ένα'
-          )}
-        </button>
+          <Option
+            checked={modes.slip}
+            onToggle={() => toggle('slip')}
+            icon={<FileText size={18} color="var(--sage-700)" strokeWidth={1.5} />}
+            title="Δελτίο αποστολής"
+            subtitle="Χωρίς τιμές, με υπογραφές"
+          />
+          <Option
+            checked={modes.priced}
+            onToggle={() => toggle('priced')}
+            icon={<Tag size={18} color="var(--sage-700)" strokeWidth={1.5} />}
+            title="Με τιμές"
+            subtitle="Πλήρες δελτίο παράδοσης με ΦΠΑ"
+          />
+          <Option
+            checked={modes.visual}
+            onToggle={() => toggle('visual')}
+            icon={<ImageIcon size={18} color="var(--sage-700)" strokeWidth={1.5} />}
+            title="Visual list"
+            subtitle="Φωτογραφία ανά γραμμή για picker"
+          />
+        </div>
+
+        <div
+          className="pb-safe"
+          style={{
+            flexShrink: 0,
+            padding: '12px 16px 14px',
+            borderTop: '1px solid rgba(63,75,70,0.08)',
+            background: 'var(--cream-50)',
+          }}
+        >
+          <button
+            type="button"
+            disabled={!canGenerate}
+            onClick={() => onGenerate(selected)}
+            className="btn-primary ios-tap"
+          >
+            {busy ? (
+              <>
+                <Loader2 size={16} color="var(--cream-50)" className="animate-spin" />
+                Δημιουργία…
+              </>
+            ) : selected.length === 1 ? (
+              'Λήψη / Κοινοποίηση'
+            ) : selected.length > 1 ? (
+              `Λήψη συνδυασμένου PDF (${selected.length})`
+            ) : (
+              'Επίλεξε τουλάχιστον ένα'
+            )}
+          </button>
+        </div>
       </div>
     </MobileSheet>
   );
