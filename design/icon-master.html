@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Bloom Orders — Icon Master</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@1,9..144,400;1,9..144,500&display=swap" rel="stylesheet">
+<style>
+  html, body { margin: 0; padding: 0; background: #fff; }
+  #icon {
+    width: 1024px;
+    height: 1024px;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: #F2EBDB;            /* cream */
+    overflow: hidden;
+  }
+  /* faint herbarium dot texture, matching the app's bo-paper */
+  #icon::before {
+    content: '';
+    position: absolute; inset: 0;
+    background-image:
+      radial-gradient(rgba(63,107,92,0.05) 1.6px, transparent 1.6px),
+      radial-gradient(rgba(63,107,92,0.03) 1.6px, transparent 1.6px);
+    background-size: 64px 64px, 32px 32px;
+    background-position: 0 0, 32px 32px;
+  }
+  .leaf-wrap {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 36px;
+  }
+  .label {
+    position: relative;
+    z-index: 1;
+    font-family: 'Fraunces', Georgia, serif;
+    font-style: italic;
+    font-weight: 400;
+    font-size: 118px;
+    line-height: 1;
+    letter-spacing: -0.01em;
+    color: #4E7549;               /* sage-500 */
+  }
+</style>
+</head>
+<body>
+  <div id="icon">
+    <div class="leaf-wrap">
+      <!-- Brand LeafMark, scaled up from the 24x24 app mark -->
+      <svg width="470" height="470" viewBox="0 0 24 24" fill="none" aria-label="Bloom Orders leaf">
+        <path d="M12 2C8 6 4 9 4 14a8 8 0 0 0 16 0c0-5-4-8-8-12z" fill="#6B8E5C"/>
+        <path d="M12 4 V20" stroke="rgba(255,255,255,0.40)" stroke-width="0.55" stroke-linecap="round"/>
+        <path d="M12 11.2 L8.6 8.4 M12 14.4 L15.4 11.6 M12 17.2 L9.2 15.0" stroke="rgba(255,255,255,0.28)" stroke-width="0.42" stroke-linecap="round"/>
+      </svg>
+    </div>
+    <div class="label">Orders</div>
+  </div>
+</body>
+</html>
