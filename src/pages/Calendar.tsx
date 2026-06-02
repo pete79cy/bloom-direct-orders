@@ -62,15 +62,23 @@ export default function Calendar() {
   const [cursor, setCursor] = useState(() => startOfMonth(today));
   const [showAll, setShowAll] = useState(false);
 
-  // Fetch a wide rolling window (-1 .. +6 months) on mount. Cursor
-  // navigation then filters client-side without re-fetching — feels
-  // instant and lets the empty-state suggest "next month with data"
-  // without a second roundtrip. The window is anchored to today so the
-  // query key is stable across cursor changes; React Query caches it
-  // for the rest of the session.
-  const fetchFrom = useMemo(() => isoFromDate(new Date(today.getFullYear(), today.getMonth() - 1, 1)), []);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const fetchTo = useMemo(() => isoFromDate(new Date(today.getFullYear(), today.getMonth() + 7, 0)), []);
+  // Fetch a wide rolling window around today. The user reports having
+  // BOTH past and future deliveries — so the window has to span enough
+  // history to surface them. We anchor on the CURSOR (not just today)
+  // so navigating to a month outside the initial window triggers a new
+  // fetch instead of silently showing empty. The window is rounded to
+  // a 12-month band centred on the cursor: 6 months before, 6 after.
+  // React Query caches each (from,to) tuple, so navigation within the
+  // band is instant; only the "stepped past the edge" case re-fetches.
+  const windowAnchor = startOfMonth(cursor);
+  const fetchFrom = useMemo(
+    () => isoFromDate(new Date(windowAnchor.getFullYear(), windowAnchor.getMonth() - 6, 1)),
+    [windowAnchor.getFullYear(), windowAnchor.getMonth()],
+  );
+  const fetchTo = useMemo(
+    () => isoFromDate(new Date(windowAnchor.getFullYear(), windowAnchor.getMonth() + 7, 0)),
+    [windowAnchor.getFullYear(), windowAnchor.getMonth()],
+  );
   const { data: rows = [], isLoading, isError } = useDeliveries(fetchFrom, fetchTo);
 
   const todayISO = isoFromDate(today);
@@ -87,6 +95,20 @@ export default function Calendar() {
     }
     return m;
   }, [rows, showAll]);
+
+  // How many rows in the current cursor month would be visible if we
+  // toggled "Όλες" on? Used to nudge the operator when the month looks
+  // empty only because closed-state DNs are being filtered out.
+  const hiddenInMonth = useMemo(() => {
+    if (showAll) return 0;
+    const monthStart = isoFromDate(startOfMonth(cursor));
+    const monthEnd = isoFromDate(endOfMonth(cursor));
+    let n = 0;
+    for (const r of rows) {
+      if (r.date >= monthStart && r.date <= monthEnd && HIDDEN.includes(r.status)) n++;
+    }
+    return n;
+  }, [rows, showAll, cursor]);
 
   // Days inside the current cursor month that have at least one row.
   const days = useMemo(() => {
@@ -298,10 +320,45 @@ export default function Calendar() {
               Καμία παράδοση τον {monthLabel(cursor)}
             </div>
 
+            {/* Most-actionable hint first: are there closed deliveries
+                hiding in THIS month that "Όλες" would surface? Operators
+                often want to look back at recently delivered runs. */}
+            {hiddenInMonth > 0 && (
+              <div
+                style={{
+                  marginBottom: 14,
+                  padding: '12px 14px',
+                  borderRadius: 12,
+                  background: 'var(--cream-200, #F4F1E8)',
+                  border: '1px solid rgba(63,75,70,0.10)',
+                }}
+              >
+                <p style={{ fontSize: 14, color: 'var(--ink-700)', marginBottom: 8 }}>
+                  <strong>{hiddenInMonth}</strong> παράδοση
+                  {hiddenInMonth === 1 ? ' είναι κρυμμένη' : 'εις είναι κρυμμένες'} αυτόν τον μήνα
+                  (παραδομένες / τιμολογημένες / ακυρωμένες).
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setShowAll(true)}
+                  className="ios-tap"
+                  style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 6,
+                    padding: '8px 12px', borderRadius: 10, border: 0,
+                    background: 'var(--sage-700)', color: 'var(--cream-50)',
+                    fontSize: 13, fontWeight: 600, cursor: 'pointer',
+                  }}
+                >
+                  Δείξε τες
+                  <ArrowRight size={13} strokeWidth={2.5} />
+                </button>
+              </div>
+            )}
+
             {monthSuggestions.length > 0 ? (
               <>
                 <p style={{ fontSize: 14, color: 'var(--ink-500)', marginBottom: 14 }}>
-                  Έχεις παραδόσεις προγραμματισμένες σε άλλους μήνες:
+                  {hiddenInMonth > 0 ? 'Άλλοι μήνες με παραδόσεις:' : 'Έχεις παραδόσεις σε άλλους μήνες:'}
                 </p>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
                   {monthSuggestions.map((s) => (
@@ -344,11 +401,13 @@ export default function Calendar() {
                 </div>
               </>
             ) : (
-              <p style={{ fontSize: 14, color: 'var(--ink-500)' }}>
-                {!showAll
-                  ? 'Δοκίμασε το «Όλες» πάνω για να δεις παραδομένες/τιμολογημένες.'
-                  : 'Δεν υπάρχουν προγραμματισμένες παραδόσεις στους επόμενους 6 μήνες.'}
-              </p>
+              hiddenInMonth === 0 && (
+                <p style={{ fontSize: 14, color: 'var(--ink-500)' }}>
+                  {!showAll
+                    ? 'Δοκίμασε το «Όλες» πάνω για να δεις παραδομένες/τιμολογημένες, ή τα βέλη για παλιότερους μήνες.'
+                    : 'Δεν υπάρχουν προγραμματισμένες παραδόσεις σε ±6 μήνες από αυτόν.'}
+                </p>
+              )
             )}
           </div>
         )}
