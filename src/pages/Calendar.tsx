@@ -84,13 +84,22 @@ export default function Calendar() {
 
   // Group all (filtered) rows by ISO date. The "Όλες" toggle decides
   // whether closed-state rows show up at all.
+  //
+  // NORMALISATION: the server returns delivery_date through pg's default
+  // DATE → JS Date → JSON.stringify path, which emits a full ISO
+  // timestamp like "2026-04-15T00:00:00.000Z". Our day-cell lookups
+  // generate "2026-04-15" via isoFromDate, so the .get() lookup misses
+  // every time and `days` stays empty regardless of cursor / chip taps.
+  // Slice to the first 10 chars (YYYY-MM-DD) so both producer and
+  // consumer agree on the key shape.
   const byDay = useMemo(() => {
     const m = new Map<string, DeliveryRow[]>();
     for (const r of rows) {
       if (!showAll && HIDDEN.includes(r.status)) continue;
-      const list = m.get(r.date) ?? [];
+      const dayKey = String(r.date).slice(0, 10);
+      const list = m.get(dayKey) ?? [];
       list.push(r);
-      m.set(r.date, list);
+      m.set(dayKey, list);
     }
     return m;
   }, [rows, showAll]);
@@ -98,13 +107,15 @@ export default function Calendar() {
   // How many rows in the current cursor month would be visible if we
   // toggled "Όλες" on? Used to nudge the operator when the month looks
   // empty only because closed-state DNs are being filtered out.
+  // Same date-normalisation as byDay above — slice to YYYY-MM-DD.
   const hiddenInMonth = useMemo(() => {
     if (showAll) return 0;
     const monthStart = isoFromDate(startOfMonth(cursor));
     const monthEnd = isoFromDate(endOfMonth(cursor));
     let n = 0;
     for (const r of rows) {
-      if (r.date >= monthStart && r.date <= monthEnd && HIDDEN.includes(r.status)) n++;
+      const day = String(r.date).slice(0, 10);
+      if (day >= monthStart && day <= monthEnd && HIDDEN.includes(r.status)) n++;
     }
     return n;
   }, [rows, showAll, cursor]);
