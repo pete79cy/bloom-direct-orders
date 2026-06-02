@@ -7,7 +7,16 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
-      registerType: 'prompt',
+      // autoUpdate, not prompt. With registerType:'prompt' the new SW is
+      // installed in WAITING state and only takes over after the user
+      // clicks the "Refresh" toast — which on iOS Safari standalone
+      // mode is unreliable: the toast often doesn't fire, the standalone
+      // shell never re-fetches, and bug fixes stall on the user's home
+      // screen indefinitely. autoUpdate combined with the skipWaiting +
+      // clientsClaim below makes the new SW activate AS SOON AS it's
+      // discovered, with no user interaction required. The next fetch
+      // on already-open clients serves the new bundles.
+      registerType: 'autoUpdate',
       includeAssets: ['favicon.svg', 'apple-touch-icon.png'],
       manifest: {
         name: 'Bloom Orders',
