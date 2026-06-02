@@ -1,6 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ChevronLeft, ChevronRight, ChevronRight as ChevronRightSmall, Sun, FileText } from 'lucide-react';
+import {
+  ChevronLeft,
+  ChevronRight,
+  ChevronRight as ChevronRightSmall,
+  Sun,
+  FileText,
+  ArrowRight,
+} from 'lucide-react';
 import { useDeliveries, type DeliveryRow } from '@/lib/queries';
 import BottomNav from '@/components/BottomNav';
 import StatusBadge from '@/components/StatusBadge';
@@ -21,7 +28,6 @@ function endOfMonth(d: Date): Date {
   return new Date(d.getFullYear(), d.getMonth() + 1, 0);
 }
 function isoFromDate(d: Date): string {
-  // Local YYYY-MM-DD (avoid timezone shift from toISOString())
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, '0');
   const day = String(d.getDate()).padStart(2, '0');
@@ -30,8 +36,14 @@ function isoFromDate(d: Date): string {
 function monthLabel(d: Date): string {
   return d.toLocaleDateString('el-GR', { month: 'long', year: 'numeric' });
 }
+function monthShortLabel(d: Date): string {
+  // "Ιουλ 2026" — compact for the empty-state suggestion chips.
+  return d.toLocaleDateString('el-GR', { month: 'short', year: 'numeric' });
+}
+function sameYearMonth(a: Date, b: Date): boolean {
+  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth();
+}
 
-/** Pill colour for the vertical accent on a day card. */
 function dayAccentVar(rows: DeliveryRow[]): string {
   if (rows.some((r) => r.status === 'PENDING')) return 'var(--clay, #B85C38)';
   if (rows.some((r) => r.status === 'CANCELLED')) return 'var(--ink-300, #cbd0c8)';
@@ -41,19 +53,30 @@ function dayAccentVar(rows: DeliveryRow[]): string {
   return 'var(--sage-700)';
 }
 
+/** A "month with deliveries" suggestion shown in the empty state — both
+ *  the Date (for navigation) and a count (for the chip label). */
+interface MonthSuggestion { date: Date; count: number }
+
 export default function Calendar() {
-  const [cursor, setCursor] = useState(() => startOfMonth(new Date()));
+  const today = new Date();
+  const [cursor, setCursor] = useState(() => startOfMonth(today));
   const [showAll, setShowAll] = useState(false);
 
-  const from = isoFromDate(startOfMonth(cursor));
-  const to = isoFromDate(endOfMonth(cursor));
-  const { data: rows = [], isLoading } = useDeliveries(from, to);
+  // Fetch a wide rolling window (-1 .. +6 months) on mount. Cursor
+  // navigation then filters client-side without re-fetching — feels
+  // instant and lets the empty-state suggest "next month with data"
+  // without a second roundtrip. The window is anchored to today so the
+  // query key is stable across cursor changes; React Query caches it
+  // for the rest of the session.
+  const fetchFrom = useMemo(() => isoFromDate(new Date(today.getFullYear(), today.getMonth() - 1, 1)), []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const fetchTo = useMemo(() => isoFromDate(new Date(today.getFullYear(), today.getMonth() + 7, 0)), []);
+  const { data: rows = [], isLoading, isError } = useDeliveries(fetchFrom, fetchTo);
 
-  const todayISO = isoFromDate(new Date());
+  const todayISO = isoFromDate(today);
 
-  // Apply the "Όλες" toggle: by default hide closed-state rows. Group
-  // the remainder by date for the agenda. The server has already
-  // collapsed (date, order) duplicates and sorted by urgency.
+  // Group all (filtered) rows by ISO date. The "Όλες" toggle decides
+  // whether closed-state rows show up at all.
   const byDay = useMemo(() => {
     const m = new Map<string, DeliveryRow[]>();
     for (const r of rows) {
@@ -65,8 +88,7 @@ export default function Calendar() {
     return m;
   }, [rows, showAll]);
 
-  // Ordered list of (date, rows) tuples for this month — only days that
-  // have at least one matching row (empty days clutter the agenda).
+  // Days inside the current cursor month that have at least one row.
   const days = useMemo(() => {
     const last = endOfMonth(cursor);
     const list: { iso: string; date: Date; rows: DeliveryRow[] }[] = [];
@@ -81,12 +103,29 @@ export default function Calendar() {
     return list;
   }, [cursor, byDay]);
 
+  // Months in the prefetched window that have at least one row, with
+  // counts. Used by the empty-state to give the operator a one-tap jump
+  // to the next month that actually has work.
+  const monthSuggestions = useMemo<MonthSuggestion[]>(() => {
+    const map = new Map<string, { date: Date; count: number }>();
+    for (const [iso, list] of byDay) {
+      const [y, m] = iso.split('-').map(Number);
+      const key = `${y}-${m}`;
+      const cur = map.get(key);
+      if (cur) cur.count += list.length;
+      else map.set(key, { date: new Date(y, m - 1, 1), count: list.length });
+    }
+    return [...map.values()]
+      .filter((s) => !sameYearMonth(s.date, cursor))
+      .sort((a, b) => a.date.getTime() - b.date.getTime());
+  }, [byDay, cursor]);
+
   const totalRowsInMonth = useMemo(
     () => days.reduce((s, d) => s + d.rows.length, 0),
     [days],
   );
 
-  // Auto-scroll to today when the month is the current one.
+  // Auto-scroll to today when the cursor month is the current one.
   const todayRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     if (todayRef.current) {
@@ -94,9 +133,7 @@ export default function Calendar() {
     }
   }, [cursor, days]);
 
-  const isThisMonth =
-    cursor.getFullYear() === new Date().getFullYear() &&
-    cursor.getMonth() === new Date().getMonth();
+  const isThisMonth = sameYearMonth(cursor, today);
 
   return (
     <div className="min-h-screen pb-24" style={{ background: 'var(--cream-100)' }}>
@@ -159,7 +196,7 @@ export default function Calendar() {
         >
           <button
             type="button"
-            onClick={() => setCursor(startOfMonth(new Date()))}
+            onClick={() => setCursor(startOfMonth(today))}
             disabled={isThisMonth}
             className="ios-tap"
             style={{
@@ -215,25 +252,104 @@ export default function Calendar() {
       </header>
 
       <div style={{ padding: '14px 16px 0' }}>
-        {!isLoading && days.length === 0 && (
+        {/* Error state — separate from "empty" so the operator can tell
+            them apart at a glance. */}
+        {isError && (
+          <div
+            style={{
+              background: 'var(--cream-50, #FDFCF8)',
+              border: '1px solid #f3c2c2',
+              borderRadius: 16,
+              padding: '20px',
+              color: 'var(--clay, #B85C38)',
+              fontSize: 14,
+              lineHeight: 1.5,
+              marginBottom: 12,
+            }}
+          >
+            <strong>Αποτυχία φόρτωσης παραδόσεων.</strong>
+            <br />
+            Δοκίμασε pull-to-refresh ή ξανάνοιξε το app.
+          </div>
+        )}
+
+        {!isLoading && !isError && days.length === 0 && (
           <div
             style={{
               background: '#fff',
               borderRadius: 16,
               boxShadow: 'var(--shadow-card)',
-              padding: '32px 20px',
-              textAlign: 'center',
+              padding: '28px 20px',
               color: 'var(--ink-500)',
-              fontSize: 15,
               lineHeight: 1.5,
             }}
           >
-            <div style={{ fontSize: 17, color: 'var(--ink-700)', marginBottom: 6, fontWeight: 600 }}>
-              Καμία παράδοση αυτόν τον μήνα
+            <div
+              className="font-display"
+              style={{
+                fontSize: 20,
+                fontStyle: 'italic',
+                fontWeight: 500,
+                color: 'var(--ink-900)',
+                marginBottom: 8,
+                lineHeight: 1.2,
+              }}
+            >
+              Καμία παράδοση τον {monthLabel(cursor)}
             </div>
-            {!showAll
-              ? 'Δοκίμασε το «Όλες» για να δεις παραδομένες / τιμολογημένες.'
-              : 'Άλλαξε μήνα από τα βέλη πάνω.'}
+
+            {monthSuggestions.length > 0 ? (
+              <>
+                <p style={{ fontSize: 14, color: 'var(--ink-500)', marginBottom: 14 }}>
+                  Έχεις παραδόσεις προγραμματισμένες σε άλλους μήνες:
+                </p>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                  {monthSuggestions.map((s) => (
+                    <button
+                      key={s.date.toISOString()}
+                      type="button"
+                      onClick={() => setCursor(s.date)}
+                      className="ios-tap"
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 8,
+                        padding: '10px 14px',
+                        borderRadius: 12,
+                        border: 0,
+                        background: 'var(--sage-700)',
+                        color: 'var(--cream-50)',
+                        fontSize: 14,
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        textTransform: 'capitalize',
+                      }}
+                    >
+                      {monthShortLabel(s.date)}
+                      <span
+                        className="font-mono-meta"
+                        style={{
+                          fontSize: 11,
+                          fontWeight: 700,
+                          padding: '2px 6px',
+                          borderRadius: 4,
+                          background: 'rgba(255,255,255,0.20)',
+                        }}
+                      >
+                        {s.count}
+                      </span>
+                      <ArrowRight size={14} strokeWidth={2.5} />
+                    </button>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <p style={{ fontSize: 14, color: 'var(--ink-500)' }}>
+                {!showAll
+                  ? 'Δοκίμασε το «Όλες» πάνω για να δεις παραδομένες/τιμολογημένες.'
+                  : 'Δεν υπάρχουν προγραμματισμένες παραδόσεις στους επόμενους 6 μήνες.'}
+              </p>
+            )}
           </div>
         )}
 
@@ -376,10 +492,6 @@ export default function Calendar() {
                           >
                             {r.order_number}
                           </span>
-                          {/* DN chip — surfaces that this slot is backed by
-                              a real delivery note (not just the planned
-                              order date). The operator wants to know that
-                              paperwork already exists for the run. */}
                           {(r.source === 'dn' || r.source === 'both') && r.dn_number && (
                             <span
                               style={{
