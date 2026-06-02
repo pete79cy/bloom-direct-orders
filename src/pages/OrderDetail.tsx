@@ -1,11 +1,13 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, FileText, Repeat } from 'lucide-react';
+import { ArrowLeft, Eye, FileText, Repeat, Truck } from 'lucide-react';
 import { toast } from 'sonner';
 import { useOrder, usePatchOrder } from '@/lib/queries';
 import { fmtEUR, fmtLongDate } from '@/lib/format';
 import StatusTimeline from '@/components/StatusTimeline';
 import PdfActionSheet from '@/components/PdfActionSheet';
+import OrderTotalPresentView, { type PresentLine } from '@/components/OrderTotalPresentView';
+import OrderSupplierBreakdownView from '@/components/OrderSupplierBreakdownView';
 import { prettyScientificName, cleanSizeSummary } from '@/lib/plant-display';
 import { vatBreakdown, VAT_LABEL } from '@/lib/vat';
 import { apiFetch } from '@/lib/api';
@@ -53,6 +55,11 @@ export default function OrderDetail() {
   const patch = usePatchOrder();
   const [pdfBusy, setPdfBusy] = useState(false);
   const [pdfSheetOpen, setPdfSheetOpen] = useState(false);
+  // Two read-only full-screen overlays for showing the order to the
+  // customer / for sourcing planning. Decoupled state — opening one
+  // does not close the other (it can't anyway: they're modal).
+  const [presentTotalOpen, setPresentTotalOpen] = useState(false);
+  const [supplierBreakdownOpen, setSupplierBreakdownOpen] = useState(false);
   // The cancel-confirm overlay. Decoupled from the underlying button so we
   // don't accidentally swap state between the "in flight" patch mutation
   // and the "user is still deciding" pre-confirm state.
@@ -112,6 +119,25 @@ export default function OrderDetail() {
   );
   const vatTotal = breakdown.reduce((s, r) => s + r.amount, 0);
   const grandTotal = subtotal + vatTotal;
+
+  // Lines shaped for the customer-facing present view. We use the rich
+  // plant name when we have it; otherwise fall back to the line description
+  // (matches the inline lines list, so the present view never shows a name
+  // the user hasn't already seen on the page).
+  const presentLines: PresentLine[] = useMemo(
+    () => lines.map((l) => {
+      const sci = prettyScientificName(l.plant_scientific_name);
+      const name = sci || l.description || l.variant_id;
+      return {
+        id: l.id,
+        description: name,
+        qty: l.qty,
+        unitPrice: l.unit_price,
+        lineTotal: lineSubtotal(l),
+      };
+    }),
+    [lines],
+  );
 
   async function changeStatus(next: OrderStatus) {
     try {
@@ -269,6 +295,64 @@ export default function OrderDetail() {
         </div>
       </section>
 
+      {/* Present-mode CTAs — full-screen, high-contrast overlays for showing
+          the order to the customer (the green CTA) or to a sourcing planner
+          (the cream secondary CTA: who supplies what). Both are read-only;
+          they sit here, above the lines, so they're reachable without any
+          scrolling once the customer opens the order. */}
+      <section style={{ padding: '14px 20px 0' }}>
+        <div style={{ display: 'flex', gap: 10 }}>
+          <button
+            type="button"
+            onClick={() => setPresentTotalOpen(true)}
+            className="ios-tap"
+            aria-label="Προβολή συνόλου"
+            style={{
+              flex: 1,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 8,
+              height: 48,
+              borderRadius: 14,
+              border: 0,
+              cursor: 'pointer',
+              background: 'var(--sage-700)',
+              color: 'var(--cream-50)',
+              fontSize: 15,
+              fontWeight: 600,
+            }}
+          >
+            <Eye size={18} strokeWidth={2} />
+            Προβολή συνόλου
+          </button>
+          <button
+            type="button"
+            onClick={() => setSupplierBreakdownOpen(true)}
+            className="ios-tap"
+            aria-label="Ανά προμηθευτή"
+            style={{
+              flex: 1,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 8,
+              height: 48,
+              borderRadius: 14,
+              border: '1px solid rgba(47,79,68,0.18)',
+              cursor: 'pointer',
+              background: '#fff',
+              color: 'var(--sage-800)',
+              fontSize: 15,
+              fontWeight: 600,
+            }}
+          >
+            <Truck size={18} strokeWidth={2} />
+            Ανά προμηθευτή
+          </button>
+        </div>
+      </section>
+
       {/* Lines */}
       <section style={{ padding: '20px 20px 0' }}>
         <div className="folio" style={{ marginBottom: 10 }}>
@@ -385,6 +469,26 @@ export default function OrderDetail() {
         onClose={() => setPdfSheetOpen(false)}
         busy={pdfBusy}
         onGenerate={(modes) => onGeneratePdf(data, modes)}
+      />
+
+      <OrderTotalPresentView
+        open={presentTotalOpen}
+        onClose={() => setPresentTotalOpen(false)}
+        orderNumber={order.order_number}
+        customerName={customerName}
+        lines={presentLines}
+        subtotal={subtotal}
+        vatBreakdown={breakdown}
+        grandTotal={grandTotal}
+        formatEur={fmtEUR}
+      />
+
+      <OrderSupplierBreakdownView
+        open={supplierBreakdownOpen}
+        onClose={() => setSupplierBreakdownOpen(false)}
+        orderId={order.id}
+        orderNumber={order.order_number}
+        customerName={customerName}
       />
 
       {/* Notes */}

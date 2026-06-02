@@ -257,4 +257,13 @@
     .ios-sheet { transition-duration: 0ms; transform: translateY(0) !important; }
     .ios-sheet-backdrop { transition-duration: 120ms; }
   }
+
+  /* Slide-up fade for full-screen "present" overlays
+     (OrderTotalPresentView, OrderSupplierBreakdownView). Slightly more
+     emphatic than a sheet because the overlay covers the whole app — the
+     user should feel a clear context switch. */
+  @keyframes presentIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
 }

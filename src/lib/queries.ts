@@ -30,6 +30,51 @@ export function useOrder(id: string | undefined) {
   });
 }
 
+// ── Supplier breakdown for a single order ──────────────────────────────────
+// Shape mirrors what bloom-crm's GET /api/orders/:id/supplier-orders returns:
+// lines grouped by supplier, with a final 'own-production' bucket (supplier=null).
+// We re-declare the shape here rather than importing from bloom-crm — the two
+// repos are kept independent on purpose, and the contract is small + stable.
+export interface SupplierBreakdownLine {
+  line_no: number;
+  variant_id: string | null;
+  variant_code: string;
+  plant_common_name: string;
+  plant_scientific_name: string;
+  description: string;
+  size_summary: string;
+  qty: number;
+  supplier_cost_price: number | null;
+}
+export interface SupplierBreakdownGroup {
+  supplier: {
+    id: string;
+    name: string;
+    contact_name?: string | null;
+    email?: string | null;
+    phone?: string | null;
+    country?: string | null;
+    notes?: string | null;
+  } | null;
+  lines: SupplierBreakdownLine[];
+}
+export interface SupplierBreakdownResponse {
+  order: { id: string; order_number: string; delivery_date: string | null; notes: string | null; created_at: string };
+  customer: { id: string; trading_name: string | null; legal_name: string | null } | null;
+  groups: SupplierBreakdownGroup[];
+}
+
+export function useOrderSupplierBreakdown(id: string | undefined, enabled: boolean = true) {
+  return useQuery({
+    queryKey: ['order-supplier-breakdown', id],
+    // Only hit the endpoint when the overlay is open. The data shape is
+    // bigger than /api/orders/:id (joins suppliers, supplier_products,
+    // supplier_prices) — no point paying that cost on every order open.
+    enabled: !!id && enabled,
+    queryFn: () => apiFetch<SupplierBreakdownResponse>(`/api/orders/${id}/supplier-orders`),
+  });
+}
+
 export function useCustomers() {
   return useQuery({
     queryKey: ['customers'],
