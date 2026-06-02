@@ -125,12 +125,17 @@ export default function OrderDetail() {
   // because we sit below the `if (isLoading || !data) return ...` early
   // return above. Plus a single map over the lines is cheap; matching
   // the local-const style of `subtotal` / `breakdown` keeps the file
-  // consistent. Rich plant name when available, line description as a
-  // fallback (mirrors the inline lines list above, so the present view
-  // never surfaces a name the user hasn't already seen on the page).
+  // consistent.
+  //
+  // Name resolution differs from the inline lines list above: this is the
+  // CUSTOMER-FACING present view, so the Greek common name takes priority
+  // over the Latin binomial. We still fall back through scientific →
+  // description → variant id so legacy / free-text / draft lines always
+  // surface something legible.
   const presentLines: PresentLine[] = lines.map((l) => {
+    const common = l.plant_common_name?.trim();
     const sci = prettyScientificName(l.plant_scientific_name);
-    const name = sci || l.description || l.variant_id;
+    const name = common || sci || l.description || l.variant_id;
     return {
       id: l.id,
       description: name,

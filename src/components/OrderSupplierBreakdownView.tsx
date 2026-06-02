@@ -74,22 +74,22 @@ export default function OrderSupplierBreakdownView({
       </button>
 
       {/* Header */}
-      <div style={{ padding: 'calc(env(safe-area-inset-top,0px) + 20px) 24px 12px' }}>
+      <div style={{ padding: 'calc(env(safe-area-inset-top,0px) + 20px) 24px 14px' }}>
         <div
           className="font-mono-meta"
-          style={{ fontSize: 11, color: 'var(--ink-500)', letterSpacing: '0.06em' }}
+          style={{ fontSize: 13, color: 'var(--ink-500)', letterSpacing: '0.06em' }}
         >
-          {orderNumber} · Ανά Προμηθευτή
+          {orderNumber} · ΑΝΑ ΠΡΟΜΗΘΕΥΤΗ
         </div>
         <div
           className="font-display"
           style={{
-            fontSize: 28,
+            fontSize: 30,
             fontWeight: 500,
             fontStyle: 'italic',
             lineHeight: 1.1,
             paddingRight: 48,
-            marginTop: 4,
+            marginTop: 6,
             color: 'var(--ink-900)',
           }}
         >
@@ -139,13 +139,14 @@ export default function OrderSupplierBreakdownView({
                 overflow: 'hidden',
               }}
             >
-              {/* Group header */}
+              {/* Group header — bigger touch + readability target, this is
+                  what the user scans first in sunlight to pick a card. */}
               <div
                 style={{
                   display: 'flex',
                   alignItems: 'center',
-                  gap: 10,
-                  padding: '12px 14px',
+                  gap: 12,
+                  padding: '16px 16px',
                   background: isOwn
                     ? 'var(--sage-100, #E7EFE2)'
                     : 'var(--cream-200, #F4F1E8)',
@@ -155,22 +156,20 @@ export default function OrderSupplierBreakdownView({
                 <div
                   aria-hidden="true"
                   style={{
-                    width: 36, height: 36, borderRadius: 999,
+                    width: 44, height: 44, borderRadius: 999,
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
                     background: isOwn ? 'var(--sage-700)' : 'var(--sage-800)',
                     color: 'var(--cream-50, #FDFCF8)',
                     flexShrink: 0,
                   }}
                 >
-                  {isOwn ? <Sprout size={18} /> : <Truck size={18} />}
+                  {isOwn ? <Sprout size={22} /> : <Truck size={22} />}
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div
-                    className="font-display"
                     style={{
-                      fontSize: 17,
-                      fontStyle: 'italic',
-                      fontWeight: 500,
+                      fontSize: 22,
+                      fontWeight: 700,
                       lineHeight: 1.15,
                       color: 'var(--ink-900)',
                     }}
@@ -183,14 +182,15 @@ export default function OrderSupplierBreakdownView({
                       style={{
                         display: 'inline-flex',
                         alignItems: 'center',
-                        gap: 4,
-                        marginTop: 2,
-                        fontSize: 11,
+                        gap: 5,
+                        marginTop: 4,
+                        fontSize: 14,
                         color: 'var(--sage-700)',
                         textDecoration: 'none',
+                        fontWeight: 500,
                       }}
                     >
-                      <Phone size={11} strokeWidth={2} />
+                      <Phone size={13} strokeWidth={2} />
                       {g.supplier.phone}
                     </a>
                   ) : null}
@@ -198,17 +198,18 @@ export default function OrderSupplierBreakdownView({
                 <div style={{ textAlign: 'right', flexShrink: 0 }}>
                   <div
                     className="font-mono-meta"
-                    style={{ fontSize: 18, fontWeight: 600, color: 'var(--ink-900)' }}
+                    style={{ fontSize: 26, fontWeight: 700, color: 'var(--ink-900)', lineHeight: 1 }}
                   >
                     {groupQty}
                   </div>
                   <div
                     className="font-mono-meta"
                     style={{
-                      fontSize: 9,
+                      fontSize: 11,
                       color: 'var(--ink-500)',
                       letterSpacing: '0.06em',
                       textTransform: 'uppercase',
+                      marginTop: 3,
                     }}
                   >
                     τεμ · {g.lines.length} {g.lines.length === 1 ? 'είδος' : 'είδη'}
@@ -216,30 +217,35 @@ export default function OrderSupplierBreakdownView({
                 </div>
               </div>
 
-              {/* Lines */}
+              {/* Lines — Greek common name first (this is a sourcing view
+                  for the operator, not a botanical reference). Scientific
+                  name as fallback for catalogue entries that don't have
+                  a common name yet; description for free-text / draft
+                  lines. Fonts bumped meaningfully (~50%) vs the original
+                  spec: this overlay is meant to be read in greenhouse
+                  light, often at arm's length while loading a truck. */}
               <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
                 {g.lines.map((l, j) => {
+                  const common = l.plant_common_name?.trim();
                   const sci = prettyScientificName(l.plant_scientific_name);
-                  const name = sci || l.plant_common_name || l.description || l.variant_code;
+                  const name = common || sci || l.description || l.variant_code;
                   const size = cleanSizeSummary(l.size_summary);
                   return (
                     <li
                       key={`${l.variant_id ?? 'no-variant'}-${l.line_no}-${j}`}
                       style={{
-                        padding: '11px 14px',
+                        padding: '14px 16px',
                         display: 'flex',
-                        alignItems: 'flex-start',
-                        gap: 12,
+                        alignItems: 'center',
+                        gap: 14,
                         borderTop: j === 0 ? 'none' : '1px solid rgba(63,75,70,0.06)',
                       }}
                     >
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div
-                          className="font-display"
                           style={{
-                            fontSize: 14,
-                            fontStyle: 'italic',
-                            fontWeight: 500,
+                            fontSize: 19,
+                            fontWeight: 600,
                             color: 'var(--ink-900)',
                             lineHeight: 1.25,
                           }}
@@ -250,11 +256,11 @@ export default function OrderSupplierBreakdownView({
                           <div
                             className="font-mono-meta"
                             style={{
-                              fontSize: 10,
+                              fontSize: 13,
                               color: 'var(--ink-500)',
-                              letterSpacing: '0.05em',
+                              letterSpacing: '0.04em',
                               textTransform: 'uppercase',
-                              marginTop: 2,
+                              marginTop: 3,
                             }}
                           >
                             {size}
@@ -264,12 +270,13 @@ export default function OrderSupplierBreakdownView({
                       <div
                         className="font-mono-meta"
                         style={{
-                          fontSize: 18,
-                          fontWeight: 600,
+                          fontSize: 28,
+                          fontWeight: 700,
                           color: 'var(--sage-800)',
                           whiteSpace: 'nowrap',
-                          minWidth: 40,
+                          minWidth: 52,
                           textAlign: 'right',
+                          lineHeight: 1,
                         }}
                       >
                         {l.qty}
@@ -284,25 +291,24 @@ export default function OrderSupplierBreakdownView({
       </div>
 
       {/* Footer totals — total qty + group count, so you know what you're
-          looking at in one glance. */}
+          looking at in one glance. Bumped for sunlight readability. */}
       <div
         style={{
-          padding: '14px 24px calc(env(safe-area-inset-bottom,0px) + 18px)',
+          padding: '16px 24px calc(env(safe-area-inset-bottom,0px) + 20px)',
           borderTop: '2px solid var(--sage-700)',
           background: 'var(--cream-100)',
           display: 'flex',
           justifyContent: 'space-between',
-          alignItems: 'baseline',
+          alignItems: 'center',
         }}
       >
         <div>
           <div
-            className="font-display"
             style={{
-              fontSize: 18,
-              fontStyle: 'italic',
-              fontWeight: 500,
+              fontSize: 22,
+              fontWeight: 700,
               color: 'var(--sage-800)',
+              lineHeight: 1.1,
             }}
           >
             Σύνολο
@@ -310,11 +316,11 @@ export default function OrderSupplierBreakdownView({
           <div
             className="font-mono-meta"
             style={{
-              fontSize: 10,
+              fontSize: 12,
               color: 'var(--ink-500)',
               letterSpacing: '0.06em',
               textTransform: 'uppercase',
-              marginTop: 2,
+              marginTop: 4,
             }}
           >
             {groups.length} {groups.length === 1 ? 'προμηθευτής' : 'προμηθευτές'} · {totalLines} {totalLines === 1 ? 'είδος' : 'είδη'}
@@ -323,14 +329,17 @@ export default function OrderSupplierBreakdownView({
         <div
           className="font-mono-meta"
           style={{
-            fontSize: 36,
-            fontWeight: 600,
+            fontSize: 44,
+            fontWeight: 700,
             lineHeight: 1,
             color: 'var(--sage-800)',
+            display: 'flex',
+            alignItems: 'baseline',
+            gap: 6,
           }}
         >
           {totalQty}
-          <span style={{ fontSize: 14, marginLeft: 4, color: 'var(--ink-500)' }}>τεμ</span>
+          <span style={{ fontSize: 18, color: 'var(--ink-500)', fontWeight: 600 }}>τεμ</span>
         </div>
       </div>
     </div>

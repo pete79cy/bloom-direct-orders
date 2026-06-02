@@ -128,14 +128,13 @@ export default function OrderTotalPresentView({
             }}
           >
             <div
-              className="font-display"
               style={{
                 flex: 1,
                 minWidth: 0,
-                fontStyle: 'italic',
                 fontSize: 19,
-                fontWeight: 500,
+                fontWeight: 600,
                 color: 'var(--ink-900)',
+                lineHeight: 1.25,
               }}
             >
               {l.description}
