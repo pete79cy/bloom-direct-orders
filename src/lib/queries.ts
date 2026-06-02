@@ -64,6 +64,35 @@ export interface SupplierBreakdownResponse {
   groups: SupplierBreakdownGroup[];
 }
 
+// ── Deliveries for a date range (calendar source) ──────────────────────────
+// Union of orders.delivery_date and delivery_notes.delivery_date so the
+// PWA calendar surfaces BOTH planned-order dates and per-DN rescheduled
+// or partial-delivery dates. One row per (date, order) tuple — the
+// server collapses duplicates and marks them as source='both'. See
+// GET /api/deliveries on the bloom-crm side for the contract.
+export interface DeliveryRow {
+  date: string;                 // YYYY-MM-DD
+  source: 'order' | 'dn' | 'both';
+  order_id: string;
+  order_number: string;
+  customer_id: string;
+  customer_name: string;
+  status: OrderStatus;
+  dn_id: string | null;
+  dn_number: string | null;
+}
+
+export function useDeliveries(from: string | undefined, to: string | undefined) {
+  return useQuery({
+    queryKey: ['deliveries', from, to],
+    enabled: !!from && !!to,
+    queryFn: () =>
+      apiFetch<DeliveryRow[]>(
+        `/api/deliveries?from=${encodeURIComponent(from!)}&to=${encodeURIComponent(to!)}`,
+      ),
+  });
+}
+
 export function useOrderSupplierBreakdown(id: string | undefined, enabled: boolean = true) {
   return useQuery({
     queryKey: ['order-supplier-breakdown', id],

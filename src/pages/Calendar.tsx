@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ChevronLeft, ChevronRight, ChevronRight as ChevronRightSmall, Sun } from 'lucide-react';
-import { useOrders, useCustomers } from '@/lib/queries';
+import { ChevronLeft, ChevronRight, ChevronRight as ChevronRightSmall, Sun, FileText } from 'lucide-react';
+import { useDeliveries, type DeliveryRow } from '@/lib/queries';
 import BottomNav from '@/components/BottomNav';
 import StatusBadge from '@/components/StatusBadge';
-import type { Order, OrderStatus } from '@/types';
+import type { OrderStatus } from '@/types';
 
 /** Statuses considered "closed" — hidden by default since they don't
  *  represent work in front of us. Toggle "Όλες" surfaces them again. */
@@ -31,13 +31,11 @@ function monthLabel(d: Date): string {
   return d.toLocaleDateString('el-GR', { month: 'long', year: 'numeric' });
 }
 
-/** Pill colour for the vertical accent on a day card. The signal we want
- *  is "what's the most urgent thing in this day?" — anything PENDING beats
- *  anything else, then anything in motion, then closed. */
-function dayAccentVar(orders: Order[]): string {
-  if (orders.some((o) => o.status === 'PENDING')) return 'var(--clay, #B85C38)';
-  if (orders.some((o) => o.status === 'CANCELLED')) return 'var(--ink-300, #cbd0c8)';
-  if (orders.every((o) => o.status === 'DELIVERED' || o.status === 'INVOICED')) {
+/** Pill colour for the vertical accent on a day card. */
+function dayAccentVar(rows: DeliveryRow[]): string {
+  if (rows.some((r) => r.status === 'PENDING')) return 'var(--clay, #B85C38)';
+  if (rows.some((r) => r.status === 'CANCELLED')) return 'var(--ink-300, #cbd0c8)';
+  if (rows.every((r) => r.status === 'DELIVERED' || r.status === 'INVOICED')) {
     return 'var(--sage-500, #4E7549)';
   }
   return 'var(--sage-700)';
@@ -46,66 +44,49 @@ function dayAccentVar(orders: Order[]): string {
 export default function Calendar() {
   const [cursor, setCursor] = useState(() => startOfMonth(new Date()));
   const [showAll, setShowAll] = useState(false);
-  const { data: orders = [] } = useOrders();
-  const { data: customers = [] } = useCustomers();
+
+  const from = isoFromDate(startOfMonth(cursor));
+  const to = isoFromDate(endOfMonth(cursor));
+  const { data: rows = [], isLoading } = useDeliveries(from, to);
 
   const todayISO = isoFromDate(new Date());
 
-  const customerLabel = (id: string) => {
-    const c = customers.find((x) => x.id === id);
-    return c?.trading_name || c?.legal_name || 'Άγνωστος πελάτης';
-  };
-
-  // Group orders by delivery_date (only within the current month, only
-  // active by default). We pre-sort each day's orders by status urgency
-  // so the most "needs attention" shows first.
+  // Apply the "Όλες" toggle: by default hide closed-state rows. Group
+  // the remainder by date for the agenda. The server has already
+  // collapsed (date, order) duplicates and sorted by urgency.
   const byDay = useMemo(() => {
-    const m = new Map<string, Order[]>();
-    const monthStart = isoFromDate(startOfMonth(cursor));
-    const monthEnd = isoFromDate(endOfMonth(cursor));
-    for (const o of orders) {
-      if (!o.delivery_date) continue;
-      if (o.delivery_date < monthStart || o.delivery_date > monthEnd) continue;
-      if (!showAll && HIDDEN.includes(o.status)) continue;
-      const list = m.get(o.delivery_date) ?? [];
-      list.push(o);
-      m.set(o.delivery_date, list);
-    }
-    // Sort each day's lines by status urgency (PENDING > PREPARING > READY > ...)
-    const rank: Record<OrderStatus, number> = {
-      PENDING: 0, PREPARING: 1, READY: 2, PARTIALLY_DELIVERED: 3,
-      DELIVERED: 4, INVOICED: 5, CANCELLED: 6,
-    };
-    for (const [, list] of m) {
-      list.sort((a, b) => rank[a.status] - rank[b.status]);
+    const m = new Map<string, DeliveryRow[]>();
+    for (const r of rows) {
+      if (!showAll && HIDDEN.includes(r.status)) continue;
+      const list = m.get(r.date) ?? [];
+      list.push(r);
+      m.set(r.date, list);
     }
     return m;
-  }, [orders, showAll, cursor]);
+  }, [rows, showAll]);
 
-  // Build the ordered list of (date, orders) tuples for this month.
-  // Only days that have at least one (filtered) order show up — empty
-  // days would just dilute the agenda in outdoor use.
+  // Ordered list of (date, rows) tuples for this month — only days that
+  // have at least one matching row (empty days clutter the agenda).
   const days = useMemo(() => {
     const last = endOfMonth(cursor);
-    const list: { iso: string; date: Date; orders: Order[] }[] = [];
+    const list: { iso: string; date: Date; rows: DeliveryRow[] }[] = [];
     for (let d = 1; d <= last.getDate(); d++) {
       const date = new Date(cursor.getFullYear(), cursor.getMonth(), d);
       const iso = isoFromDate(date);
-      const dayOrders = byDay.get(iso);
-      if (dayOrders && dayOrders.length > 0) {
-        list.push({ iso, date, orders: dayOrders });
+      const dayRows = byDay.get(iso);
+      if (dayRows && dayRows.length > 0) {
+        list.push({ iso, date, rows: dayRows });
       }
     }
     return list;
   }, [cursor, byDay]);
 
-  const totalOrdersInMonth = useMemo(
-    () => days.reduce((s, d) => s + d.orders.length, 0),
+  const totalRowsInMonth = useMemo(
+    () => days.reduce((s, d) => s + d.rows.length, 0),
     [days],
   );
 
-  // Auto-scroll to today when the month is the current one. Saves a
-  // scroll for the most common outdoor case ("what do I have today?").
+  // Auto-scroll to today when the month is the current one.
   const todayRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     if (todayRef.current) {
@@ -119,11 +100,7 @@ export default function Calendar() {
 
   return (
     <div className="min-h-screen pb-24" style={{ background: 'var(--cream-100)' }}>
-      {/* Top bar: month nav + jump-to-today */}
-      <header
-        className="pt-safe"
-        style={{ padding: '14px 20px 8px' }}
-      >
+      <header className="pt-safe" style={{ padding: '14px 20px 8px' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <h1
             className="font-display"
@@ -149,8 +126,7 @@ export default function Calendar() {
                 width: 44, height: 44, borderRadius: 999, border: 0,
                 background: '#fff', color: 'var(--sage-800)',
                 display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                boxShadow: 'var(--shadow-card)',
-                cursor: 'pointer',
+                boxShadow: 'var(--shadow-card)', cursor: 'pointer',
               }}
             >
               <ChevronLeft size={22} />
@@ -164,8 +140,7 @@ export default function Calendar() {
                 width: 44, height: 44, borderRadius: 999, border: 0,
                 background: '#fff', color: 'var(--sage-800)',
                 display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                boxShadow: 'var(--shadow-card)',
-                cursor: 'pointer',
+                boxShadow: 'var(--shadow-card)', cursor: 'pointer',
               }}
             >
               <ChevronRight size={22} />
@@ -201,7 +176,6 @@ export default function Calendar() {
             Σήμερα
           </button>
 
-          {/* "Όλες" toggle — surfaces delivered/invoiced/cancelled too */}
           <label
             className="ios-tap"
             style={{
@@ -211,8 +185,7 @@ export default function Calendar() {
               background: showAll ? 'var(--sage-100, #E6EEE2)' : '#fff',
               color: showAll ? 'var(--sage-800)' : 'var(--ink-700)',
               fontSize: 13, fontWeight: 600,
-              boxShadow: 'var(--shadow-card)',
-              cursor: 'pointer',
+              boxShadow: 'var(--shadow-card)', cursor: 'pointer',
             }}
           >
             <input
@@ -225,8 +198,6 @@ export default function Calendar() {
           </label>
         </div>
 
-        {/* Tiny month summary — # παραδόσεις, # παραγγελίες — so you can
-            sanity-check whether the toggle is hiding what you expect. */}
         <div
           className="font-mono-meta"
           style={{
@@ -237,13 +208,14 @@ export default function Calendar() {
             marginTop: 10,
           }}
         >
-          {days.length} {days.length === 1 ? 'μέρα' : 'μέρες'} · {totalOrdersInMonth} {totalOrdersInMonth === 1 ? 'παραγγελία' : 'παραγγελίες'}
+          {isLoading
+            ? 'Φόρτωση…'
+            : `${days.length} ${days.length === 1 ? 'μέρα' : 'μέρες'} · ${totalRowsInMonth} ${totalRowsInMonth === 1 ? 'παράδοση' : 'παραδόσεις'}`}
         </div>
       </header>
 
-      {/* Agenda list — one card per day-with-orders */}
       <div style={{ padding: '14px 16px 0' }}>
-        {days.length === 0 && (
+        {!isLoading && days.length === 0 && (
           <div
             style={{
               background: '#fff',
@@ -265,9 +237,9 @@ export default function Calendar() {
           </div>
         )}
 
-        {days.map(({ iso, date, orders: dayOrders }) => {
+        {days.map(({ iso, date, rows: dayRows }) => {
           const isToday = iso === todayISO;
-          const accent = dayAccentVar(dayOrders);
+          const accent = dayAccentVar(dayRows);
           const dayNum = date.getDate();
           const dayName = DAY_ABBR[date.getDay()];
           return (
@@ -284,18 +256,14 @@ export default function Calendar() {
                 border: isToday ? '2px solid var(--sage-700)' : 'none',
               }}
             >
-              {/* Vertical accent stripe on the left edge. Same colour as the
-                  most urgent status, gives a glance-level signal in sunlight. */}
               <div
                 aria-hidden="true"
                 style={{
-                  position: 'absolute',
-                  left: 0, top: 0, bottom: 0, width: 6,
+                  position: 'absolute', left: 0, top: 0, bottom: 0, width: 6,
                   background: accent,
                 }}
               />
 
-              {/* Day header — big date number, day name, count */}
               <div
                 style={{
                   display: 'flex',
@@ -348,31 +316,22 @@ export default function Calendar() {
                       ΣΗΜΕΡΑ
                     </div>
                   )}
-                  <div
-                    style={{
-                      fontSize: 14,
-                      fontWeight: 500,
-                      color: 'var(--ink-700)',
-                    }}
-                  >
-                    {dayOrders.length} {dayOrders.length === 1 ? 'παράδοση' : 'παραδόσεις'}
+                  <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--ink-700)' }}>
+                    {dayRows.length} {dayRows.length === 1 ? 'παράδοση' : 'παραδόσεις'}
                   </div>
                 </div>
               </div>
 
-              {/* Orders for this day — full-width tap rows. Customer name
-                  is the loudest element (this is the answer to "who do I
-                  visit today?"), order number is mono-meta for context. */}
               <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
-                {dayOrders.map((o, i) => (
+                {dayRows.map((r, i) => (
                   <li
-                    key={o.id}
+                    key={`${r.order_id}::${r.dn_id ?? 'plan'}`}
                     style={{
                       borderTop: i === 0 ? 'none' : '1px solid rgba(63,75,70,0.06)',
                     }}
                   >
                     <Link
-                      to={`/orders/${o.id}`}
+                      to={`/orders/${r.order_id}`}
                       className="ios-tap"
                       style={{
                         display: 'flex',
@@ -395,7 +354,7 @@ export default function Calendar() {
                             whiteSpace: 'nowrap',
                           }}
                         >
-                          {customerLabel(o.customer_id)}
+                          {r.customer_name}
                         </div>
                         <div
                           style={{
@@ -403,9 +362,10 @@ export default function Calendar() {
                             alignItems: 'center',
                             gap: 8,
                             marginTop: 5,
+                            flexWrap: 'wrap',
                           }}
                         >
-                          <StatusBadge status={o.status} />
+                          <StatusBadge status={r.status} />
                           <span
                             className="font-mono-meta"
                             style={{
@@ -414,15 +374,34 @@ export default function Calendar() {
                               letterSpacing: '0.04em',
                             }}
                           >
-                            {o.order_number}
+                            {r.order_number}
                           </span>
+                          {/* DN chip — surfaces that this slot is backed by
+                              a real delivery note (not just the planned
+                              order date). The operator wants to know that
+                              paperwork already exists for the run. */}
+                          {(r.source === 'dn' || r.source === 'both') && r.dn_number && (
+                            <span
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 3,
+                                fontSize: 10,
+                                fontWeight: 700,
+                                letterSpacing: '0.05em',
+                                padding: '2px 6px',
+                                borderRadius: 4,
+                                background: 'var(--sage-100, #E6EEE2)',
+                                color: 'var(--sage-800)',
+                              }}
+                            >
+                              <FileText size={10} strokeWidth={2.5} />
+                              {r.dn_number}
+                            </span>
+                          )}
                         </div>
                       </div>
-                      <ChevronRightSmall
-                        size={20}
-                        color="var(--ink-300, #c4cabe)"
-                        strokeWidth={2}
-                      />
+                      <ChevronRightSmall size={20} color="var(--ink-300, #c4cabe)" strokeWidth={2} />
                     </Link>
                   </li>
                 ))}
