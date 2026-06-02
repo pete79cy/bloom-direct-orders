@@ -62,23 +62,22 @@ export default function Calendar() {
   const [cursor, setCursor] = useState(() => startOfMonth(today));
   const [showAll, setShowAll] = useState(false);
 
-  // Fetch a wide rolling window around today. The user reports having
-  // BOTH past and future deliveries — so the window has to span enough
-  // history to surface them. We anchor on the CURSOR (not just today)
-  // so navigating to a month outside the initial window triggers a new
-  // fetch instead of silently showing empty. The window is rounded to
-  // a 12-month band centred on the cursor: 6 months before, 6 after.
-  // React Query caches each (from,to) tuple, so navigation within the
-  // band is instant; only the "stepped past the edge" case re-fetches.
-  const windowAnchor = startOfMonth(cursor);
-  const fetchFrom = useMemo(
-    () => isoFromDate(new Date(windowAnchor.getFullYear(), windowAnchor.getMonth() - 6, 1)),
-    [windowAnchor.getFullYear(), windowAnchor.getMonth()],
-  );
-  const fetchTo = useMemo(
-    () => isoFromDate(new Date(windowAnchor.getFullYear(), windowAnchor.getMonth() + 7, 0)),
-    [windowAnchor.getFullYear(), windowAnchor.getMonth()],
-  );
+  // Wide STATIC window anchored to today (NOT to the cursor). The user
+  // reported tapping a month-suggestion chip and seeing nothing change
+  // — root cause: the cursor-anchored window changed the query key on
+  // every navigation, kicking off a fresh fetch each time. While the
+  // new fetch was in flight, `rows` defaulted to [] which re-rendered
+  // the same empty state the user was trying to escape (just with a
+  // different chip set milliseconds later).
+  //
+  // A 24-month static window (-12 to +12 months) covers the realistic
+  // small-business horizon in a single request and lets cursor changes
+  // be instant client-side filters. React Query caches the (from, to)
+  // pair across the whole session — zero refetches on month changes.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const fetchFrom = useMemo(() => isoFromDate(new Date(today.getFullYear(), today.getMonth() - 12, 1)), []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const fetchTo = useMemo(() => isoFromDate(new Date(today.getFullYear(), today.getMonth() + 13, 0)), []);
   const { data: rows = [], isLoading, isError } = useDeliveries(fetchFrom, fetchTo);
 
   const todayISO = isoFromDate(today);
