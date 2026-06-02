@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Eye, FileText, Repeat, Truck } from 'lucide-react';
 import { toast } from 'sonner';
@@ -120,24 +120,25 @@ export default function OrderDetail() {
   const vatTotal = breakdown.reduce((s, r) => s + r.amount, 0);
   const grandTotal = subtotal + vatTotal;
 
-  // Lines shaped for the customer-facing present view. We use the rich
-  // plant name when we have it; otherwise fall back to the line description
-  // (matches the inline lines list, so the present view never shows a name
-  // the user hasn't already seen on the page).
-  const presentLines: PresentLine[] = useMemo(
-    () => lines.map((l) => {
-      const sci = prettyScientificName(l.plant_scientific_name);
-      const name = sci || l.description || l.variant_id;
-      return {
-        id: l.id,
-        description: name,
-        qty: l.qty,
-        unitPrice: l.unit_price,
-        lineTotal: lineSubtotal(l),
-      };
-    }),
-    [lines],
-  );
+  // Lines shaped for the customer-facing present view. Plain const —
+  // declaring this as a useMemo would be a Rules-of-Hooks violation
+  // because we sit below the `if (isLoading || !data) return ...` early
+  // return above. Plus a single map over the lines is cheap; matching
+  // the local-const style of `subtotal` / `breakdown` keeps the file
+  // consistent. Rich plant name when available, line description as a
+  // fallback (mirrors the inline lines list above, so the present view
+  // never surfaces a name the user hasn't already seen on the page).
+  const presentLines: PresentLine[] = lines.map((l) => {
+    const sci = prettyScientificName(l.plant_scientific_name);
+    const name = sci || l.description || l.variant_id;
+    return {
+      id: l.id,
+      description: name,
+      qty: l.qty,
+      unitPrice: l.unit_price,
+      lineTotal: lineSubtotal(l),
+    };
+  });
 
   async function changeStatus(next: OrderStatus) {
     try {
