@@ -1,7 +1,7 @@
 import { Link, useNavigate } from 'react-router-dom';
 import { Plus, LogOut } from 'lucide-react';
 import { useOrders, useCustomers } from '@/lib/queries';
-import { fmtShortDate } from '@/lib/format';
+import { fmtShortDate, dayKey } from '@/lib/format';
 import { logout, getUser } from '@/lib/auth';
 import StatusBadge from '@/components/StatusBadge';
 import BottomNav from '@/components/BottomNav';
@@ -21,12 +21,15 @@ export default function Home() {
 
   const recent = orders.slice(0, 5);
   const todayISO = new Date().toISOString().slice(0, 10);
+  const tomorrowDate = new Date(); tomorrowDate.setDate(tomorrowDate.getDate() + 1);
+  const tomorrowISO = tomorrowDate.toISOString().slice(0, 10);
   const preparingNow = orders.filter((o) => o.status === 'PREPARING').length;
-  const todayDeliveries = orders.filter((o) => o.delivery_date === todayISO).length;
-  const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate() + 1);
-  const tomorrowDeliveries = orders.filter(
-    (o) => o.delivery_date === tomorrow.toISOString().slice(0, 10),
-  ).length;
+  // dayKey() normalises the server's "YYYY-MM-DDT00:00:00.000Z" timestamp
+  // back to YYYY-MM-DD so the === comparison against todayISO actually
+  // matches. Without it the counts are pinned at 0 forever — same root
+  // cause that hid the calendar's day cards.
+  const todayDeliveries = orders.filter((o) => dayKey(o.delivery_date) === todayISO).length;
+  const tomorrowDeliveries = orders.filter((o) => dayKey(o.delivery_date) === tomorrowISO).length;
 
   const { day, date } = todayHeader();
   const firstName = (user?.name ?? user?.email ?? '').split(/[ @]/)[0];
