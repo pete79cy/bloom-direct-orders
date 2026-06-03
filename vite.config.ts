@@ -2,8 +2,25 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 import path from 'node:path';
+import { execSync } from 'node:child_process';
+
+// Build-time git SHA injection so the deployed bundle can identify
+// itself in the UI. Used by the Calendar debug strip to prove which
+// commit the user's device is actually serving. Falls back to a marker
+// when run outside a git tree (e.g. dist deploy contexts).
+let GIT_SHA = 'unknown';
+try {
+  GIT_SHA = execSync('git rev-parse --short HEAD', { stdio: ['ignore', 'pipe', 'ignore'] })
+    .toString()
+    .trim();
+} catch {
+  // ignore — keep 'unknown'
+}
 
 export default defineConfig({
+  define: {
+    __BUILD_SHA__: JSON.stringify(GIT_SHA),
+  },
   plugins: [
     react(),
     VitePWA({

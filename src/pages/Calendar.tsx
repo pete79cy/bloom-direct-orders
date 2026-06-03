@@ -607,12 +607,14 @@ export default function Calendar() {
           lineHeight: 1.4,
         }}
       >
-        build: cal-static-1774817 · today {todayISO} · range {fetchFrom}…{fetchTo}
+        build: {__BUILD_SHA__} · today {todayISO} · range {fetchFrom}…{fetchTo}
         <br />
         rows: {isLoading ? 'loading' : isError ? 'ERROR' : rows.length} ·
         showAll: {String(showAll)} ·
         cursor: {isoFromDate(cursor)} ·
         days: {days.length}
+        <br />
+        first day-key sample: {rows[0] ? String(rows[0].date).slice(0, 10) : '—'}
       </div>
 
       <BottomNav />
