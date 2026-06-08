@@ -93,6 +93,50 @@ export function useDeliveries(from: string | undefined, to: string | undefined) 
   });
 }
 
+// ── Order amendments (inline edit on PWA) ──────────────────────────────────
+// Mirrors POST /api/orders/:orderId/amendments on bloom-crm. The PWA only
+// uses confirm: true (apply immediately, no DRAFT state) — operators want
+// the order to reflect their edit the second they tap Save, not stage it
+// for the desktop to confirm. Reason categories and per-amendment notes
+// are deliberately omitted on the PWA side; the desktop still has them
+// when manual corrections are needed.
+export type AmendmentType = 'ADD' | 'REMOVE' | 'QTY_CHANGE' | 'PRICE_CHANGE' | 'SUBSTITUTE';
+
+export interface AmendmentRequest {
+  type: AmendmentType;
+  target_order_line_id?: string | null;
+  new_variant_id?: string | null;
+  new_qty?: number | null;
+  new_unit_price?: number | null;
+  reason_category?: string;
+  reason_notes?: string;
+  requested_by_party?: 'CUSTOMER' | 'NURSERY';
+  requested_by_user?: string;
+  confirm?: boolean;
+}
+
+export function useCreateAmendment() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ orderId, amendment }: { orderId: string; amendment: AmendmentRequest }) => {
+      return apiFetch<{ ok: boolean; id: string; amendment_no: number }>(
+        `/api/orders/${orderId}/amendments`,
+        {
+          method: 'POST',
+          body: JSON.stringify({ confirm: true, ...amendment }),
+        },
+      );
+    },
+    onSuccess: (_data, { orderId }) => {
+      // Force a fresh read — order_lines were mutated server-side by the
+      // applyAmendmentToOrder transaction inside the POST handler.
+      void qc.invalidateQueries({ queryKey: ['order', orderId] });
+      void qc.invalidateQueries({ queryKey: ['orders'] });
+      void qc.invalidateQueries({ queryKey: ['deliveries'] });
+    },
+  });
+}
+
 export function useOrderSupplierBreakdown(id: string | undefined, enabled: boolean = true) {
   return useQuery({
     queryKey: ['order-supplier-breakdown', id],

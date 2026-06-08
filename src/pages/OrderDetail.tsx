@@ -1,18 +1,21 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Eye, FileText, Repeat, Truck } from 'lucide-react';
+import { ArrowLeft, Check, Eye, FileText, Minus, Pencil, Plus, Repeat, Trash2, Truck, X } from 'lucide-react';
 import { toast } from 'sonner';
-import { useOrder, usePatchOrder } from '@/lib/queries';
+import { useOrder, usePatchOrder, useCreateAmendment, type AmendmentRequest } from '@/lib/queries';
 import { fmtEUR, fmtLongDate } from '@/lib/format';
+import { getUser } from '@/lib/auth';
 import StatusTimeline from '@/components/StatusTimeline';
 import PdfActionSheet from '@/components/PdfActionSheet';
 import OrderTotalPresentView, { type PresentLine } from '@/components/OrderTotalPresentView';
 import OrderSupplierBreakdownView from '@/components/OrderSupplierBreakdownView';
+import AddLineSheet, { type AddLineResult } from '@/components/AddLineSheet';
+import VariantPickerSheet from '@/components/VariantPickerSheet';
 import { prettyScientificName, cleanSizeSummary } from '@/lib/plant-display';
 import { vatBreakdown, VAT_LABEL } from '@/lib/vat';
 import { apiFetch } from '@/lib/api';
 import type { DeliveryPdfMode } from '@/lib/pdf-delivery';
-import type { OrderStatus, OrderLineEnriched, OrderDetail as OrderDetailT } from '@/types';
+import type { OrderStatus, OrderLineEnriched, OrderDetail as OrderDetailT, Plant, Variant } from '@/types';
 
 const STATUS_NEXT: Partial<Record<OrderStatus, OrderStatus[]>> = {
   PENDING: ['PREPARING', 'CANCELLED'],
@@ -53,6 +56,7 @@ export default function OrderDetail() {
   const navigate = useNavigate();
   const { data, isLoading } = useOrder(id);
   const patch = usePatchOrder();
+  const createAmendment = useCreateAmendment();
   const [pdfBusy, setPdfBusy] = useState(false);
   const [pdfSheetOpen, setPdfSheetOpen] = useState(false);
   // Two read-only full-screen overlays for showing the order to the
@@ -64,6 +68,35 @@ export default function OrderDetail() {
   // don't accidentally swap state between the "in flight" patch mutation
   // and the "user is still deciding" pre-confirm state.
   const [confirmCancelOpen, setConfirmCancelOpen] = useState(false);
+
+  // ── Inline edit mode ──────────────────────────────────────────────
+  // Operators need to fix orders in the field — qty / price corrections,
+  // adding a forgotten line, removing one the customer dropped. The
+  // server-side amendments system already supports it (POST /api/orders/
+  // :orderId/amendments with confirm:true). On the PWA we collect all
+  // changes locally, diff against the saved order on Save, and emit one
+  // amendment per change in sequence. Each amendment goes through the
+  // existing applyAmendmentToOrder transaction so the audit trail lands
+  // on bloom-crm exactly as if the user had edited from desktop.
+  const [editMode, setEditMode] = useState(false);
+  const [editedQty, setEditedQty] = useState<Record<string, number>>({});
+  const [editedPrice, setEditedPrice] = useState<Record<string, number>>({});
+  const [removedIds, setRemovedIds] = useState<Set<string>>(new Set());
+  const [addedLines, setAddedLines] = useState<Array<{
+    tmpId: string;
+    variant_id: string;
+    qty: number;
+    unit_price: number;
+    vat_rate: number;
+    description: string;
+    plant_common_name: string | null;
+    plant_scientific_name: string | null;
+    size_summary: string | null;
+  }>>([]);
+  const [addLineSheetOpen, setAddLineSheetOpen] = useState(false);
+  const [addPickedVariant, setAddPickedVariant] = useState<{ variant: Variant; plant: Plant | undefined } | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [variantPickerOpen, setVariantPickerOpen] = useState(false);
 
   if (isLoading || !data) {
     return <div className="p-4 text-ink-500">Φόρτωση…</div>;
@@ -112,13 +145,60 @@ export default function OrderDetail() {
   const customerLegal = customer && customer.trading_name && customer.legal_name !== customer.trading_name
     ? customer.legal_name
     : null;
-  // Subtotal (net) + VAT breakdown + grand total (gross)
-  const subtotal = lines.reduce((s, l) => s + lineSubtotal(l), 0);
-  const breakdown = vatBreakdown(
-    lines.map((l) => ({ net: lineSubtotal(l), vat_rate: l.vat_rate ?? 19 })),
-  );
+
+  // Live preview of edits — when in edit mode, totals must reflect what
+  // the operator is about to submit, not what's still on the server. We
+  // compose two streams: existing-line states (with optional qty/price
+  // overrides and a removed filter) + added lines that don't exist yet
+  // server-side. discount_pct stays at the server value — the PWA edit
+  // flow doesn't let the operator change it.
+  function effectiveLineNet(l: OrderLineEnriched): number {
+    const qty = editedQty[l.id] ?? l.qty;
+    const unit = editedPrice[l.id] ?? l.unit_price;
+    const discount = l.discount_pct ?? 0;
+    return qty * unit * (1 - discount / 100);
+  }
+
+  const existingForTotals = lines
+    .filter((l) => !removedIds.has(l.id))
+    .map((l) => ({ net: effectiveLineNet(l), vat_rate: l.vat_rate ?? 19 }));
+  const addedForTotals = addedLines.map((a) => ({
+    net: a.qty * a.unit_price,
+    vat_rate: a.vat_rate,
+  }));
+
+  const subtotal = [...existingForTotals, ...addedForTotals].reduce((s, r) => s + r.net, 0);
+  const breakdown = vatBreakdown([...existingForTotals, ...addedForTotals]);
   const vatTotal = breakdown.reduce((s, r) => s + r.amount, 0);
   const grandTotal = subtotal + vatTotal;
+
+  // Pre-compute whether anything actually changed vs the saved order.
+  // Hides the Save button while there's nothing to commit, and stops
+  // spurious empty-amendment-batch submissions.
+  const hasUnsavedChanges = useMemo(() => {
+    if (removedIds.size > 0) return true;
+    if (addedLines.length > 0) return true;
+    if (Object.keys(editedQty).length > 0) {
+      for (const l of lines) {
+        const q = editedQty[l.id];
+        if (q !== undefined && q !== l.qty) return true;
+      }
+    }
+    if (Object.keys(editedPrice).length > 0) {
+      for (const l of lines) {
+        const p = editedPrice[l.id];
+        if (p !== undefined && p !== l.unit_price) return true;
+      }
+    }
+    return false;
+  }, [editedQty, editedPrice, removedIds, addedLines, lines]);
+
+  const canEdit = !['INVOICED', 'CANCELLED'].includes(order.status);
+  const excludeVariantIds = useMemo(
+    () => [...lines.filter((l) => !removedIds.has(l.id)).map((l) => l.variant_id),
+           ...addedLines.map((a) => a.variant_id)],
+    [lines, removedIds, addedLines],
+  );
 
   // Lines shaped for the customer-facing present view. Plain const —
   // declaring this as a useMemo would be a Rules-of-Hooks violation
@@ -144,6 +224,147 @@ export default function OrderDetail() {
       lineTotal: lineSubtotal(l),
     };
   });
+
+  function handleEnterEdit() {
+    setEditMode(true);
+  }
+  function handleCancelEdit() {
+    setEditedQty({});
+    setEditedPrice({});
+    setRemovedIds(new Set());
+    setAddedLines([]);
+    setAddPickedVariant(null);
+    setVariantPickerOpen(false);
+    setAddLineSheetOpen(false);
+    setEditMode(false);
+  }
+
+  function handleVariantPicked(variant: Variant, _plant: Plant | undefined) {
+    // Picked from VariantPickerSheet → hand off to AddLineSheet for
+    // qty/price/vat confirmation. The configured line lands in
+    // addedLines on commit (handleAddLineCommit).
+    setAddPickedVariant({ variant, plant: _plant });
+    setAddLineSheetOpen(true);
+  }
+
+  function handleAddLineCommit(result: AddLineResult) {
+    if (!addPickedVariant) return;
+    const { variant: v, plant: p } = addPickedVariant;
+    const size = cleanSizeSummary([
+      v.pot_volume_l ? `P${v.pot_volume_l}L` : '',
+      v.height_min_cm ? `H${v.height_min_cm}-${v.height_max_cm || v.height_min_cm}` : '',
+    ].filter(Boolean).join(' ')) || null;
+    setAddedLines((prev) => [
+      ...prev,
+      {
+        tmpId: `new-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        variant_id: v.id,
+        qty: result.qty,
+        unit_price: result.unit_price,
+        vat_rate: result.vat_rate,
+        description: result.description,
+        plant_common_name: p?.common_name ?? null,
+        plant_scientific_name: p?.scientific_name ?? null,
+        size_summary: size,
+      },
+    ]);
+    setAddPickedVariant(null);
+    setAddLineSheetOpen(false);
+  }
+
+  async function handleSaveEdits() {
+    const user = getUser();
+    const requestedBy = user?.name || user?.email || 'pwa';
+
+    const ops: AmendmentRequest[] = [];
+
+    // 1. REMOVE — process before edits so we don't waste a server roundtrip
+    //    on a line that's about to be cancelled anyway.
+    for (const l of lines) {
+      if (removedIds.has(l.id)) {
+        ops.push({ type: 'REMOVE', target_order_line_id: l.id });
+      }
+    }
+
+    // 2. QTY_CHANGE / PRICE_CHANGE on surviving lines. QTY_CHANGE on the
+    //    server happily accepts a new_unit_price too, so combine when both
+    //    changed — saves an amendment row + a network roundtrip.
+    for (const l of lines) {
+      if (removedIds.has(l.id)) continue;
+      const newQty = editedQty[l.id];
+      const newPrice = editedPrice[l.id];
+      const qtyChanged = newQty !== undefined && newQty !== l.qty;
+      const priceChanged = newPrice !== undefined && newPrice !== l.unit_price;
+      if (qtyChanged && priceChanged) {
+        ops.push({
+          type: 'QTY_CHANGE',
+          target_order_line_id: l.id,
+          new_qty: newQty,
+          new_unit_price: newPrice,
+        });
+      } else if (qtyChanged) {
+        ops.push({
+          type: 'QTY_CHANGE',
+          target_order_line_id: l.id,
+          new_qty: newQty,
+        });
+      } else if (priceChanged) {
+        ops.push({
+          type: 'PRICE_CHANGE',
+          target_order_line_id: l.id,
+          new_unit_price: newPrice,
+        });
+      }
+    }
+
+    // 3. ADD — new lines last so any failures roll back without affecting
+    //    pre-existing data ordering on the page.
+    for (const a of addedLines) {
+      ops.push({
+        type: 'ADD',
+        new_variant_id: a.variant_id,
+        new_qty: a.qty,
+        new_unit_price: a.unit_price,
+      });
+    }
+
+    if (ops.length === 0) {
+      setEditMode(false);
+      return;
+    }
+
+    setSaving(true);
+    let succeeded = 0;
+    try {
+      for (const op of ops) {
+        await createAmendment.mutateAsync({
+          orderId: order.id,
+          amendment: {
+            ...op,
+            requested_by_party: 'NURSERY',
+            requested_by_user: requestedBy,
+            confirm: true,
+          },
+        });
+        succeeded++;
+      }
+      toast.success(
+        ops.length === 1
+          ? 'Η αλλαγή αποθηκεύτηκε'
+          : `${ops.length} αλλαγές αποθηκεύτηκαν`,
+      );
+      handleCancelEdit();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Σφάλμα';
+      if (succeeded > 0) {
+        toast.error(`Αποθηκεύτηκαν ${succeeded}/${ops.length}. Αποτυχία: ${msg}`);
+      } else {
+        toast.error(`Αποτυχία: ${msg}`);
+      }
+    } finally {
+      setSaving(false);
+    }
+  }
 
   async function changeStatus(next: OrderStatus) {
     try {
@@ -359,12 +580,89 @@ export default function OrderDetail() {
         </div>
       </section>
 
-      {/* Lines */}
+      {/* Lines — toggles between read-only + editable mode. Edit pill sits
+          on the section header rather than the page top because the actual
+          editable surface is here. */}
       <section style={{ padding: '20px 20px 0' }}>
-        <div className="folio" style={{ marginBottom: 10 }}>
-          <span className="folio-num">{String(lines.length).padStart(2, '0')}</span>
-          <span>γραμμές</span>
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            marginBottom: 10,
+          }}
+        >
+          <div className="folio">
+            <span className="folio-num">
+              {String(lines.filter((l) => !removedIds.has(l.id)).length + addedLines.length).padStart(2, '0')}
+            </span>
+            <span>γραμμές</span>
+          </div>
+
+          {canEdit && !editMode && (
+            <button
+              type="button"
+              onClick={handleEnterEdit}
+              className="ios-tap"
+              aria-label="Επεξεργασία γραμμών"
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 6,
+                height: 32, padding: '0 12px',
+                borderRadius: 999, border: 0,
+                background: 'var(--sage-100, #E6EEE2)',
+                color: 'var(--sage-800)',
+                fontSize: 13, fontWeight: 600, cursor: 'pointer',
+              }}
+            >
+              <Pencil size={13} strokeWidth={2.2} />
+              Επεξεργασία
+            </button>
+          )}
+          {editMode && (
+            <div style={{ display: 'flex', gap: 6 }}>
+              <button
+                type="button"
+                onClick={handleCancelEdit}
+                disabled={saving}
+                className="ios-tap"
+                aria-label="Ακύρωση επεξεργασίας"
+                style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 4,
+                  height: 32, padding: '0 12px',
+                  borderRadius: 999, border: '1px solid rgba(63,75,70,0.18)',
+                  background: '#fff',
+                  color: 'var(--ink-700)',
+                  fontSize: 13, fontWeight: 600,
+                  cursor: saving ? 'default' : 'pointer',
+                  opacity: saving ? 0.6 : 1,
+                }}
+              >
+                <X size={14} strokeWidth={2.2} />
+                Ακύρωση
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveEdits}
+                disabled={!hasUnsavedChanges || saving}
+                className="ios-tap"
+                aria-label="Αποθήκευση αλλαγών"
+                style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 4,
+                  height: 32, padding: '0 14px',
+                  borderRadius: 999, border: 0,
+                  background: hasUnsavedChanges && !saving ? 'var(--sage-700)' : 'var(--cream-200)',
+                  color: hasUnsavedChanges && !saving ? 'var(--cream-50)' : 'var(--ink-500)',
+                  fontSize: 13, fontWeight: 600,
+                  cursor: hasUnsavedChanges && !saving ? 'pointer' : 'default',
+                }}
+              >
+                <Check size={14} strokeWidth={2.4} />
+                {saving ? 'Αποθήκευση…' : 'Αποθήκευση'}
+              </button>
+            </div>
+          )}
         </div>
+
         <div
           style={{
             background: '#fff',
@@ -374,32 +672,39 @@ export default function OrderDetail() {
           }}
         >
           {lines.map((l, i) => {
-            // Plant name resolution: scientific name first, fall back to the
-            // free-text description only when there's no plant lookup
-            // (legacy / detached lines). We check for a separate per-line
-            // *note* further down to avoid double-displaying a description
-            // that's being used as the plant-name fallback.
             const hasPlantName = !!prettyScientificName(l.plant_scientific_name);
             const name = prettyScientificName(l.plant_scientific_name) || l.description || l.variant_id;
             const size = cleanSizeSummary(l.size_summary);
-            // Only show the per-line note when there IS a real plant name —
-            // otherwise the description is already the title and would render
-            // twice.
             const note = hasPlantName ? l.description?.trim() : null;
+            const isRemoved = removedIds.has(l.id);
+            const qtyVal = editedQty[l.id] ?? l.qty;
+            const priceVal = editedPrice[l.id] ?? l.unit_price;
+            const effectiveNet = effectiveLineNet(l);
+
             return (
               <div key={l.id}>
                 {i > 0 && <div className="hairline" style={{ margin: '0 16px' }} />}
-                <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+                <div
+                  style={{
+                    padding: '12px 16px',
+                    display: 'flex',
+                    alignItems: 'flex-start',
+                    gap: 12,
+                    opacity: isRemoved ? 0.45 : 1,
+                  }}
+                >
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <p
                       className="font-display"
-                      style={{ fontStyle: 'italic', fontSize: 14, fontWeight: 500 }}
+                      style={{
+                        fontStyle: 'italic',
+                        fontSize: 14,
+                        fontWeight: 500,
+                        textDecoration: isRemoved ? 'line-through' : 'none',
+                      }}
                     >
                       {name}
                     </p>
-                    {/* ΠΡΟΧΕΙΡΟ marker — appears under lines whose joined
-                        variant still has status='draft' so the rep can
-                        confirm post-submit which lines landed as drafts. */}
                     {l.variant_status === 'draft' && (
                       <p
                         className="text-eyebrow"
@@ -416,18 +721,163 @@ export default function OrderDetail() {
                         <span aria-hidden="true">⚠</span> ΠΡΟΧΕΙΡΟ
                       </p>
                     )}
-                    <p
-                      className="font-mono-meta"
-                      style={{
-                        fontSize: 10,
-                        color: 'var(--ink-500)',
-                        marginTop: 2,
-                        letterSpacing: '0.05em',
-                        textTransform: 'uppercase',
-                      }}
-                    >
-                      {size ? `${size} · ` : ''}{l.qty} × {fmtEUR(l.unit_price)}
-                    </p>
+                    {!editMode && (
+                      <p
+                        className="font-mono-meta"
+                        style={{
+                          fontSize: 10,
+                          color: 'var(--ink-500)',
+                          marginTop: 2,
+                          letterSpacing: '0.05em',
+                          textTransform: 'uppercase',
+                        }}
+                      >
+                        {size ? `${size} · ` : ''}{l.qty} × {fmtEUR(l.unit_price)}
+                      </p>
+                    )}
+                    {editMode && (
+                      <div
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 8,
+                          marginTop: 6,
+                          flexWrap: 'wrap',
+                        }}
+                      >
+                        {/* Qty stepper */}
+                        <div
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            borderRadius: 8,
+                            border: '1px solid rgba(63,75,70,0.18)',
+                            background: isRemoved ? 'var(--cream-200)' : '#fff',
+                            overflow: 'hidden',
+                          }}
+                        >
+                          <button
+                            type="button"
+                            disabled={isRemoved || qtyVal <= 1}
+                            onClick={() =>
+                              setEditedQty((m) => ({ ...m, [l.id]: Math.max(1, qtyVal - 1) }))
+                            }
+                            aria-label="Μείωση"
+                            style={{
+                              width: 32, height: 32, border: 0,
+                              background: 'transparent', color: 'var(--ink-700)',
+                              cursor: isRemoved || qtyVal <= 1 ? 'default' : 'pointer',
+                              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                            }}
+                          >
+                            <Minus size={14} />
+                          </button>
+                          <input
+                            type="number"
+                            inputMode="numeric"
+                            value={qtyVal}
+                            onChange={(e) => {
+                              const n = Number.parseInt(e.target.value, 10);
+                              if (!Number.isNaN(n) && n >= 1) {
+                                setEditedQty((m) => ({ ...m, [l.id]: n }));
+                              } else if (e.target.value === '') {
+                                setEditedQty((m) => ({ ...m, [l.id]: 1 }));
+                              }
+                            }}
+                            disabled={isRemoved}
+                            className="font-mono-meta"
+                            style={{
+                              width: 44, height: 32,
+                              border: 0, outline: 'none',
+                              background: 'transparent',
+                              textAlign: 'center', fontSize: 14, fontWeight: 600,
+                              color: 'var(--ink-900)',
+                              MozAppearance: 'textfield',
+                            }}
+                          />
+                          <button
+                            type="button"
+                            disabled={isRemoved}
+                            onClick={() =>
+                              setEditedQty((m) => ({ ...m, [l.id]: qtyVal + 1 }))
+                            }
+                            aria-label="Αύξηση"
+                            style={{
+                              width: 32, height: 32, border: 0,
+                              background: 'transparent', color: 'var(--ink-700)',
+                              cursor: isRemoved ? 'default' : 'pointer',
+                              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                            }}
+                          >
+                            <Plus size={14} />
+                          </button>
+                        </div>
+                        {/* Price input */}
+                        <label
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 4,
+                            padding: '4px 10px',
+                            borderRadius: 8,
+                            border: '1px solid rgba(63,75,70,0.18)',
+                            background: isRemoved ? 'var(--cream-200)' : '#fff',
+                            height: 32,
+                          }}
+                        >
+                          <span style={{ fontSize: 13, color: 'var(--ink-500)' }}>€</span>
+                          <input
+                            type="number"
+                            inputMode="decimal"
+                            step="0.01"
+                            min="0"
+                            value={priceVal}
+                            onChange={(e) => {
+                              const n = Number.parseFloat(e.target.value);
+                              if (!Number.isNaN(n) && n >= 0) {
+                                setEditedPrice((m) => ({ ...m, [l.id]: n }));
+                              } else if (e.target.value === '') {
+                                setEditedPrice((m) => ({ ...m, [l.id]: 0 }));
+                              }
+                            }}
+                            disabled={isRemoved}
+                            className="font-mono-meta"
+                            style={{
+                              width: 64,
+                              border: 0, outline: 'none',
+                              background: 'transparent',
+                              fontSize: 14, fontWeight: 600,
+                              color: 'var(--ink-900)',
+                            }}
+                          />
+                        </label>
+                        {/* Remove toggle */}
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setRemovedIds((set) => {
+                              const next = new Set(set);
+                              if (next.has(l.id)) next.delete(l.id);
+                              else next.add(l.id);
+                              return next;
+                            })
+                          }
+                          className="ios-tap"
+                          aria-label={isRemoved ? 'Επαναφορά γραμμής' : 'Αφαίρεση γραμμής'}
+                          style={{
+                            width: 32, height: 32,
+                            borderRadius: 8,
+                            border: '1px solid rgba(63,75,70,0.18)',
+                            background: isRemoved ? 'var(--clay, #B85C38)' : '#fff',
+                            color: isRemoved ? '#fff' : 'var(--clay, #B85C38)',
+                            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                            cursor: 'pointer',
+                          }}
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    )}
                     {note && (
                       <div
                         style={{
@@ -447,14 +897,123 @@ export default function OrderDetail() {
                       </div>
                     )}
                   </div>
-                  <span className="font-mono-meta" style={{ fontSize: 13, fontWeight: 500, marginTop: 2 }}>
-                    {fmtEUR(lineSubtotal(l))}
+                  <span
+                    className="font-mono-meta"
+                    style={{
+                      fontSize: 13,
+                      fontWeight: 500,
+                      marginTop: 2,
+                      textDecoration: isRemoved ? 'line-through' : 'none',
+                      color: isRemoved ? 'var(--ink-500)' : 'var(--ink-900)',
+                    }}
+                  >
+                    {fmtEUR(effectiveNet)}
                   </span>
                 </div>
               </div>
             );
           })}
+
+          {/* Added (unsaved) lines */}
+          {addedLines.map((a, i) => {
+            const name = prettyScientificName(a.plant_scientific_name) || a.plant_common_name || a.description || a.variant_id;
+            return (
+              <div key={a.tmpId}>
+                {(lines.length > 0 || i > 0) && <div className="hairline" style={{ margin: '0 16px' }} />}
+                <div
+                  style={{
+                    padding: '12px 16px',
+                    display: 'flex',
+                    alignItems: 'flex-start',
+                    gap: 12,
+                    background: 'var(--sage-50, #F4F7F3)',
+                  }}
+                >
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <p
+                      className="font-display"
+                      style={{ fontStyle: 'italic', fontSize: 14, fontWeight: 500 }}
+                    >
+                      {name}
+                    </p>
+                    <p
+                      className="text-eyebrow"
+                      style={{
+                        fontSize: 9,
+                        marginTop: 2,
+                        color: 'var(--sage-700)',
+                        letterSpacing: '0.15em',
+                      }}
+                    >
+                      ΝΕΑ
+                    </p>
+                    <p
+                      className="font-mono-meta"
+                      style={{
+                        fontSize: 10,
+                        color: 'var(--ink-500)',
+                        marginTop: 2,
+                        letterSpacing: '0.05em',
+                        textTransform: 'uppercase',
+                      }}
+                    >
+                      {a.size_summary ? `${a.size_summary} · ` : ''}{a.qty} × {fmtEUR(a.unit_price)}
+                    </p>
+                  </div>
+                  <span className="font-mono-meta" style={{ fontSize: 13, fontWeight: 500, marginTop: 2 }}>
+                    {fmtEUR(a.qty * a.unit_price)}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setAddedLines((prev) => prev.filter((x) => x.tmpId !== a.tmpId))
+                    }
+                    aria-label="Αφαίρεση νέας γραμμής"
+                    style={{
+                      width: 28, height: 28,
+                      borderRadius: 6,
+                      border: 0,
+                      background: 'transparent',
+                      color: 'var(--clay)',
+                      display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                      cursor: 'pointer',
+                      flexShrink: 0,
+                    }}
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              </div>
+            );
+          })}
         </div>
+
+        {editMode && (
+          <button
+            type="button"
+            onClick={() => setVariantPickerOpen(true)}
+            className="ios-tap"
+            style={{
+              marginTop: 10,
+              width: '100%',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 8,
+              height: 46,
+              borderRadius: 14,
+              border: '1.5px dashed rgba(47,79,68,0.30)',
+              background: 'transparent',
+              color: 'var(--sage-800)',
+              fontSize: 14,
+              fontWeight: 600,
+              cursor: 'pointer',
+            }}
+          >
+            <Plus size={16} strokeWidth={2.2} />
+            Νέα γραμμή
+          </button>
+        )}
       </section>
 
       {/* PDF export — opens action sheet to pick which delivery doc(s) */}
@@ -496,6 +1055,34 @@ export default function OrderDetail() {
         orderNumber={order.order_number}
         customerName={customerName}
       />
+
+      {/* Variant picker for +Νέα γραμμή. Hands off to AddLineSheet when the
+          operator picks one — we don't append directly because the user
+          still needs to set qty/price/vat. */}
+      <VariantPickerSheet
+        open={variantPickerOpen}
+        onClose={() => setVariantPickerOpen(false)}
+        excludeVariantIds={excludeVariantIds}
+        onPick={(variant, plant) => {
+          setVariantPickerOpen(false);
+          handleVariantPicked(variant, plant);
+        }}
+      />
+
+      {/* AddLineSheet for configuring the picked variant. Mounts only once
+          a variant has been picked. */}
+      {addPickedVariant && (
+        <AddLineSheet
+          open={addLineSheetOpen}
+          variant={addPickedVariant.variant}
+          plant={addPickedVariant.plant}
+          onClose={() => {
+            setAddLineSheetOpen(false);
+            setAddPickedVariant(null);
+          }}
+          onAdd={handleAddLineCommit}
+        />
+      )}
 
       {/* Notes */}
       {order.notes && (
