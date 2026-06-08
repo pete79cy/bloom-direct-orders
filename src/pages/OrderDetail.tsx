@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Check, Eye, FileText, Minus, Pencil, Plus, Repeat, Trash2, Truck, X } from 'lucide-react';
 import { toast } from 'sonner';
@@ -173,32 +173,32 @@ export default function OrderDetail() {
   const grandTotal = subtotal + vatTotal;
 
   // Pre-compute whether anything actually changed vs the saved order.
-  // Hides the Save button while there's nothing to commit, and stops
-  // spurious empty-amendment-batch submissions.
-  const hasUnsavedChanges = useMemo(() => {
-    if (removedIds.size > 0) return true;
-    if (addedLines.length > 0) return true;
-    if (Object.keys(editedQty).length > 0) {
-      for (const l of lines) {
-        const q = editedQty[l.id];
-        if (q !== undefined && q !== l.qty) return true;
+  // Plain const, NOT useMemo — we sit below the `if (isLoading || !data)
+  // return ...` early return up top, and a useMemo here would be a
+  // Rules-of-Hooks violation (hook count changes between the loading
+  // render and the loaded one → React throws → "Κάτι πήγε στραβά").
+  // The list scans are O(lines) and only run once per render anyway,
+  // matching the local-const style of `subtotal` / `breakdown` above.
+  let hasUnsavedChanges = false;
+  if (removedIds.size > 0 || addedLines.length > 0) {
+    hasUnsavedChanges = true;
+  } else {
+    for (const l of lines) {
+      const q = editedQty[l.id];
+      const p = editedPrice[l.id];
+      if ((q !== undefined && q !== l.qty) || (p !== undefined && p !== l.unit_price)) {
+        hasUnsavedChanges = true;
+        break;
       }
     }
-    if (Object.keys(editedPrice).length > 0) {
-      for (const l of lines) {
-        const p = editedPrice[l.id];
-        if (p !== undefined && p !== l.unit_price) return true;
-      }
-    }
-    return false;
-  }, [editedQty, editedPrice, removedIds, addedLines, lines]);
+  }
 
   const canEdit = !['INVOICED', 'CANCELLED'].includes(order.status);
-  const excludeVariantIds = useMemo(
-    () => [...lines.filter((l) => !removedIds.has(l.id)).map((l) => l.variant_id),
-           ...addedLines.map((a) => a.variant_id)],
-    [lines, removedIds, addedLines],
-  );
+  // Same Rules-of-Hooks reason — plain const, not useMemo.
+  const excludeVariantIds = [
+    ...lines.filter((l) => !removedIds.has(l.id)).map((l) => l.variant_id),
+    ...addedLines.map((a) => a.variant_id),
+  ];
 
   // Lines shaped for the customer-facing present view. Plain const —
   // declaring this as a useMemo would be a Rules-of-Hooks violation
