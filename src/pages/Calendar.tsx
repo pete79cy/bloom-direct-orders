@@ -592,31 +592,6 @@ export default function Calendar() {
         })}
       </div>
 
-      {/* Debug strip — visible build marker so we can immediately tell
-          from a screenshot whether the device is on the latest bundle
-          or still serving a cached older SW. Remove once the
-          stale-PWA-cache problem is fully resolved. */}
-      <div
-        style={{
-          padding: '12px 20px 4px',
-          fontSize: 9,
-          letterSpacing: '0.06em',
-          textTransform: 'uppercase',
-          color: 'var(--ink-500)',
-          fontFamily: 'monospace',
-          lineHeight: 1.4,
-        }}
-      >
-        build: {__BUILD_SHA__} · today {todayISO} · range {fetchFrom}…{fetchTo}
-        <br />
-        rows: {isLoading ? 'loading' : isError ? 'ERROR' : rows.length} ·
-        showAll: {String(showAll)} ·
-        cursor: {isoFromDate(cursor)} ·
-        days: {days.length}
-        <br />
-        first day-key sample: {rows[0] ? String(rows[0].date).slice(0, 10) : '—'}
-      </div>
-
       <BottomNav />
     </div>
   );
