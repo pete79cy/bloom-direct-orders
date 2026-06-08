@@ -43,12 +43,23 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Set up the SSH key for the one connection we make.
+          # The repo's SSH_HOST / SSH_USER secrets were originally pasted
+          # with a trailing newline (a classic GitHub Secrets UI mishap —
+          # paste from a terminal often includes the trailing \n). rsync-
+          # deployments@7.0.1 was quoting them in a way that hid the
+          # problem on the wire but produced the "***@" link_stat errors
+          # in the rsync log. A direct ssh call fails harder with
+          # "hostname contains invalid characters". Strip CR/LF/space
+          # before use so the workflow is robust against the secret
+          # contents instead of requiring the operator to re-paste.
+          HOST=$(printf '%s' "$SSH_HOST" | tr -d '\r\n\t ')
+          USER=$(printf '%s' "$SSH_USER" | tr -d '\r\n\t ')
+
           mkdir -p ~/.ssh
           chmod 700 ~/.ssh
           printf '%s\n' "$SSH_KEY" > ~/.ssh/id_deploy
           chmod 600 ~/.ssh/id_deploy
-          ssh-keyscan -H "$SSH_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          ssh-keyscan -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null
 
           # Pipe a gzip tarball straight to a remote shell that wipes
           # the target dir first, then extracts. -C dist . sends the
@@ -59,11 +70,11 @@ jobs:
             -o ServerAliveInterval=20 \
             -o ServerAliveCountMax=6 \
             -i ~/.ssh/id_deploy \
-            "$SSH_USER@$SSH_HOST" \
+            "$USER@$HOST" \
             'set -e; cd /var/www/direct-orders && rm -rf ./* && tar xzf -'
 
-          # Quick post-deploy sanity check — confirms the new index.html
-          # actually landed by reading its size from the server. Fails the
-          # job loudly if the remote dir is empty.
-          ssh -i ~/.ssh/id_deploy "$SSH_USER@$SSH_HOST" \
+          # Sanity check — fail loudly if /var/www/direct-orders/index.html
+          # wasn't refreshed by this deploy. rsync used to mask this kind
+          # of half-deploy under a green status.
+          ssh -i ~/.ssh/id_deploy "$USER@$HOST" \
             'ls -la /var/www/direct-orders/index.html'
