@@ -55,11 +55,28 @@ jobs:
           HOST=$(printf '%s' "$SSH_HOST" | tr -d '\r\n\t ')
           USER=$(printf '%s' "$SSH_USER" | tr -d '\r\n\t ')
 
+          echo "Deploying to host: ${HOST:0:3}*** as user ${USER:0:3}***"
+
           mkdir -p ~/.ssh
           chmod 700 ~/.ssh
           printf '%s\n' "$SSH_KEY" > ~/.ssh/id_deploy
           chmod 600 ~/.ssh/id_deploy
-          ssh-keyscan -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null
+
+          # ssh-keyscan can fail transiently when the runner -> VPS
+          # network blip we already see in the rsync logs hits the
+          # scan port. With `set -e` that single blip kills the whole
+          # deploy with no useful output. Make it best-effort + retry
+          # up to 3 times instead. If it ultimately fails, the real
+          # tar | ssh below will fail loudly with the actual reason.
+          for attempt in 1 2 3; do
+            if ssh-keyscan -T 10 -H "$HOST" >> ~/.ssh/known_hosts 2>/tmp/keyscan.err; then
+              echo "ssh-keyscan ok (attempt $attempt)"
+              break
+            fi
+            echo "ssh-keyscan attempt $attempt failed:"
+            cat /tmp/keyscan.err || true
+            sleep 3
+          done
 
           # Pipe a gzip tarball straight to a remote shell that wipes
           # the target dir first, then extracts. -C dist . sends the
