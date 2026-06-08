@@ -20,12 +20,50 @@ jobs:
           VITE_API_BASE_URL: https://smartquotations.eu
           VITE_SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
         run: npm run build
-      - name: Deploy via rsync
-        uses: burnett01/rsync-deployments@7.0.1
-        with:
-          switches: -avzr --delete
-          path: dist/
-          remote_path: /var/www/direct-orders/
-          remote_host: ${{ secrets.SSH_HOST }}
-          remote_user: ${{ secrets.SSH_USER }}
-          remote_key: ${{ secrets.SSH_KEY }}
+
+      # Atomic SSH + tar transfer. We previously used burnett01/rsync-
+      # deployments@7.0.1, which kept failing intermittently with
+      # "rsync: connection unexpectedly closed (0 bytes received so
+      # far) [sender] (code 255)" — the GitHub-hosted runner's outbound
+      # SSH was being dropped before rsync could finish negotiating.
+      # Multiple deploys in a row left the production assets stuck at
+      # an old commit while the workflow ran appeared green-then-red.
+      #
+      # tar | ssh is one connection, one stream, and atomic at the file
+      # level — the remote tar extraction completes only after the full
+      # archive is received. Far more resilient to the same flakey SSH
+      # path. The remote side wipes /var/www/direct-orders/* before
+      # extraction so old hashed chunks don't linger forever (the same
+      # role --delete played on rsync).
+      - name: Deploy via SSH + tar
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_KEY: ${{ secrets.SSH_KEY }}
+        run: |
+          set -euo pipefail
+
+          # Set up the SSH key for the one connection we make.
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_deploy
+          chmod 600 ~/.ssh/id_deploy
+          ssh-keyscan -H "$SSH_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+
+          # Pipe a gzip tarball straight to a remote shell that wipes
+          # the target dir first, then extracts. -C dist . sends the
+          # CONTENTS of dist/ (not the dist/ folder itself) so the
+          # files land directly under /var/www/direct-orders/.
+          tar czf - -C dist . | ssh \
+            -o StrictHostKeyChecking=yes \
+            -o ServerAliveInterval=20 \
+            -o ServerAliveCountMax=6 \
+            -i ~/.ssh/id_deploy \
+            "$SSH_USER@$SSH_HOST" \
+            'set -e; cd /var/www/direct-orders && rm -rf ./* && tar xzf -'
+
+          # Quick post-deploy sanity check — confirms the new index.html
+          # actually landed by reading its size from the server. Fails the
+          # job loudly if the remote dir is empty.
+          ssh -i ~/.ssh/id_deploy "$SSH_USER@$SSH_HOST" \
+            'ls -la /var/www/direct-orders/index.html'
