@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { X, Search } from 'lucide-react';
 import { useVariants, usePlants } from '@/lib/queries';
 import { pickPlantName, sizeDetailsString, fallbackVariantLabel } from '@/lib/plant-display';
+import { normalizeForSearch } from '@/lib/search';
 import type { Plant, Variant } from '@/types';
 
 interface Props {
@@ -42,14 +43,17 @@ export default function VariantPickerSheet({ open, onClose, excludeVariantIds = 
           girth_max_cm: v.girth_max_cm,
         }) ?? '';
         const display = primary === 'Φυτό' ? fallbackVariantLabel(v.variant_code) : primary;
-        const searchBlob = `${primary} ${secondary ?? ''} ${plant?.common_name ?? ''} ${v.variant_code} ${size}`.toLowerCase();
+        // Pre-normalised so per-keystroke filter is a plain substring check.
+        const searchBlob = normalizeForSearch(
+          `${primary} ${secondary ?? ''} ${plant?.common_name ?? ''} ${v.variant_code} ${size}`,
+        );
         return { variant: v, plant, display, secondary, size, searchBlob };
       }),
     [variants, plants],
   );
 
   const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
+    const q = normalizeForSearch(query.trim());
     const base = q ? enriched.filter((e) => e.searchBlob.includes(q)) : enriched;
     const sorted = [...base].sort((a, b) => {
       const aDraft = a.variant.status === 'draft' ? 1 : 0;

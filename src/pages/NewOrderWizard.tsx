@@ -20,6 +20,7 @@ import {
 import { buildCostMap, marginPct } from '@/lib/supplier-cost';
 import PriceInput from '@/components/PriceInput';
 import { fmtEUR, fmtLongDate, isoToday, addDays } from '@/lib/format';
+import { normalizeForSearch } from '@/lib/search';
 import {
   pickPlantName, sizeDetailsString, fallbackVariantLabel,
 } from '@/lib/plant-display';
@@ -248,12 +249,12 @@ function Step1Customer({ customers, selected, onSelect }: Step1Props) {
   }, [qc]);
 
   const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
+    const q = normalizeForSearch(query.trim());
     if (!q) return customers;
     return customers.filter(
       (c) =>
-        (c.trading_name ?? '').toLowerCase().includes(q) ||
-        c.legal_name.toLowerCase().includes(q),
+        normalizeForSearch(c.trading_name).includes(q) ||
+        normalizeForSearch(c.legal_name).includes(q),
     );
   }, [customers, query]);
 
@@ -513,14 +514,18 @@ function Step3Lines({
             .join(' · '),
           // Search includes Greek + Latin + SKU + size + supplier so any
           // search term hits.
-          searchBlob: `${primary} ${secondary ?? ''} ${p?.common_name ?? ''} ${v.variant_code} ${cleanedSize} ${supplier ?? ''}`.toLowerCase(),
+          // Diacritic-insensitive: operators search without tonos and
+          // still match "Λεβάντα" / "Δάφνη" / etc.
+          searchBlob: normalizeForSearch(
+            `${primary} ${secondary ?? ''} ${p?.common_name ?? ''} ${v.variant_code} ${cleanedSize} ${supplier ?? ''}`,
+          ),
         };
       }),
     [variants, plants, supplierByVariant],
   );
 
   const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
+    const q = normalizeForSearch(query.trim());
     const base = q
       ? variantsWithPlant.filter((x) => x.searchBlob.includes(q))
       : variantsWithPlant;

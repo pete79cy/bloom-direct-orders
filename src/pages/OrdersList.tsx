@@ -3,6 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { Search } from 'lucide-react';
 import { useOrders, useCustomers } from '@/lib/queries';
 import { fmtShortDate, isoToday, addDays, dayKey } from '@/lib/format';
+import { normalizeForSearch } from '@/lib/search';
 import StatusBadge from '@/components/StatusBadge';
 import BottomNav from '@/components/BottomNav';
 import type { OrderStatus } from '@/types';
@@ -65,7 +66,9 @@ export default function OrdersList() {
   }, [orders]);
 
   const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
+    // Diacritic-insensitive: "Παπου" matches "Παππού", same for plant /
+    // legal names that the operator searches without typing tonos.
+    const q = normalizeForSearch(search.trim());
     return orders.filter((o) => {
       if (filter === 'ALL' && HIDDEN_FROM_DEFAULT.includes(o.status)) return false;
       if (filter !== 'ALL' && o.status !== filter) return false;
@@ -74,8 +77,8 @@ export default function OrdersList() {
       // so the === against deliveryDateFilter (which is YYYY-MM-DD) matches.
       if (deliveryDateFilter && dayKey(o.delivery_date) !== deliveryDateFilter) return false;
       if (!q) return true;
-      const label = customerLabel(o.customer_id).toLowerCase();
-      return label.includes(q) || o.order_number.toLowerCase().includes(q);
+      const label = normalizeForSearch(customerLabel(o.customer_id));
+      return label.includes(q) || normalizeForSearch(o.order_number).includes(q);
     });
   }, [orders, customers, filter, search, deliveryDateFilter]);
 
