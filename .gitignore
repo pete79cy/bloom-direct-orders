@@ -13,6 +13,12 @@ dist-ssr
 *.local
 *.tsbuildinfo
 
+# Secrets — never commit real env files. .env.example IS tracked (it's the
+# template with placeholder values); everything else with secrets is ignored.
+.env
+.env.*
+!.env.example
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
