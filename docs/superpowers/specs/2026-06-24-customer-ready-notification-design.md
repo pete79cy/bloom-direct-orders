@@ -102,7 +102,7 @@ ambiguous number. Unit-tested.
 
 ### `src/lib/notify-message.ts` (new)
 Builds the default message from a template:
-> `Γεια σας {customerName}, η παραγγελία σας {orderNumber} είναι έτοιμη και μπορείτε να την παραλάβετε από τα Φυτώρια Πακκούτη. Ευχαριστούμε!`
+> `Γεια σας {customerName}, η παραγγελία σας {orderNumber} είναι έτοιμη και μπορείτε να την παραλάβετε από τα Φυτώρια μας. Ευχαριστούμε!`
 
 And builds the per-channel deep-link URLs:
 - Viber: `viber://chat?number=%2B357XXXXXXXX` (text NOT included — copied to clipboard separately)
