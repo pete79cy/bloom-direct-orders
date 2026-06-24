@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from './api';
+import type { NotifyChannel } from './notify-message';
 import type {
   Customer,
   Order,
@@ -133,6 +134,22 @@ export function useCreateAmendment() {
       void qc.invalidateQueries({ queryKey: ['order', orderId] });
       void qc.invalidateQueries({ queryKey: ['orders'] });
       void qc.invalidateQueries({ queryKey: ['deliveries'] });
+    },
+  });
+}
+
+export function useNotifyCustomer() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ orderId, channel }: { orderId: string; channel: NotifyChannel }) => {
+      return apiFetch<Order>(`/api/orders/${orderId}/notify`, {
+        method: 'POST',
+        body: JSON.stringify({ channel }),
+      });
+    },
+    onSuccess: (_data, { orderId }) => {
+      void qc.invalidateQueries({ queryKey: ['order', orderId] });
+      void qc.invalidateQueries({ queryKey: ['orders'] });
     },
   });
 }

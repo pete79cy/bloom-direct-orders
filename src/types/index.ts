@@ -16,6 +16,8 @@ export interface Order {
   delivery_address_id: string | null;
   notes: string | null;
   source_quote_id: string | null;
+  customer_notified_at?: string | null;
+  customer_notified_channel?: 'VIBER' | 'WHATSAPP' | 'SMS' | null;
   created_at: string;
   updated_at: string;
 }
