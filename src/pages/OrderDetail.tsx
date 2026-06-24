@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Check, Eye, FileText, Minus, Pencil, Plus, Repeat, Trash2, Truck, X } from 'lucide-react';
+import { ArrowLeft, Check, Eye, FileText, Minus, Pencil, Plus, Repeat, Send, Trash2, Truck, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { useOrder, usePatchOrder, useCreateAmendment, type AmendmentRequest } from '@/lib/queries';
 import { fmtEUR, fmtLongDate } from '@/lib/format';
@@ -9,6 +9,7 @@ import StatusTimeline from '@/components/StatusTimeline';
 import PdfActionSheet from '@/components/PdfActionSheet';
 import OrderTotalPresentView, { type PresentLine } from '@/components/OrderTotalPresentView';
 import OrderSupplierBreakdownView from '@/components/OrderSupplierBreakdownView';
+import NotifyCustomerSheet from '@/components/NotifyCustomerSheet';
 import AddLineSheet, { type AddLineResult } from '@/components/AddLineSheet';
 import VariantPickerSheet from '@/components/VariantPickerSheet';
 import { prettyScientificName, cleanSizeSummary } from '@/lib/plant-display';
@@ -51,6 +52,14 @@ function lineSubtotal(l: OrderLineEnriched): number {
   return l.qty * l.unit_price * (1 - discount / 100);
 }
 
+function fmtNotifiedAt(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleString('el-GR', {
+    day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit',
+  });
+}
+
 export default function OrderDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -64,6 +73,7 @@ export default function OrderDetail() {
   // does not close the other (it can't anyway: they're modal).
   const [presentTotalOpen, setPresentTotalOpen] = useState(false);
   const [supplierBreakdownOpen, setSupplierBreakdownOpen] = useState(false);
+  const [notifyOpen, setNotifyOpen] = useState(false);
   // The cancel-confirm overlay. Decoupled from the underlying button so we
   // don't accidentally swap state between the "in flight" patch mutation
   // and the "user is still deciding" pre-confirm state.
@@ -370,6 +380,9 @@ export default function OrderDetail() {
     try {
       await patch.mutateAsync({ id: order.id, status: next });
       toast.success(`Status: ${STATUS_LABEL_GR[next]}`);
+      // Auto-open the customer notification sheet the moment an order
+      // becomes READY — the operator usually wants to message right away.
+      if (next === 'READY') setNotifyOpen(true);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Σφάλμα');
     }
@@ -1056,6 +1069,15 @@ export default function OrderDetail() {
         customerName={customerName}
       />
 
+      <NotifyCustomerSheet
+        open={notifyOpen}
+        onClose={() => setNotifyOpen(false)}
+        orderId={order.id}
+        orderNumber={order.order_number}
+        customerName={customerName}
+        customerPhone={customer?.phone}
+      />
+
       {/* Variant picker for +Νέα γραμμή. Hands off to AddLineSheet when the
           operator picks one — we don't append directly because the user
           still needs to set qty/price/vat. */}
@@ -1100,6 +1122,34 @@ export default function OrderDetail() {
           >
             {order.notes}
           </p>
+        </section>
+      )}
+
+      {/* Customer notification — only meaningful once the order is READY. */}
+      {order.status === 'READY' && (
+        <section style={{ padding: '20px 20px 0' }}>
+          <button
+            type="button"
+            onClick={() => setNotifyOpen(true)}
+            className="btn-primary ios-tap"
+            style={{ height: 50 }}
+          >
+            <Send size={16} color="var(--cream-50)" strokeWidth={1.9} />
+            Ειδοποίηση πελάτη
+          </button>
+          {order.customer_notified_at && (
+            <div
+              className="font-mono-meta"
+              style={{
+                marginTop: 8, fontSize: 12, color: 'var(--sage-700)',
+                display: 'flex', alignItems: 'center', gap: 6,
+              }}
+            >
+              <Check size={13} strokeWidth={2.4} />
+              Ειδοποιήθηκε {fmtNotifiedAt(order.customer_notified_at)}
+              {order.customer_notified_channel ? ` · ${order.customer_notified_channel}` : ''}
+            </div>
+          )}
         </section>
       )}
 
