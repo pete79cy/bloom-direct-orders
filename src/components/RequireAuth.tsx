@@ -19,7 +19,13 @@ export default function RequireAuth({ children }: Props) {
   }, [navigate]);
 
   if (!isLoggedIn()) {
-    return <Navigate to="/login" state={{ from: location.pathname }} replace />;
+    return (
+      <Navigate
+        to="/login"
+        state={{ from: `${location.pathname}${location.search}` }}
+        replace
+      />
+    );
   }
   return <>{children}</>;
 }

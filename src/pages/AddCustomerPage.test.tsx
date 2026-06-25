@@ -23,6 +23,11 @@ describe('AddCustomerPage', () => {
     expect((screen.getByDisplayValue('foo@bar.gr') as HTMLInputElement)).toBeTruthy();
   });
 
+  it('cleans literal %20 from shortcut name templates', () => {
+    renderAt('/customers/new?name=%CE%A0%CE%B1%CE%BD%CE%B1%CE%B3%CE%B9%CF%8E%CF%84%CE%B7%CF%82%2520');
+    expect((screen.getByDisplayValue('Παναγιώτης') as HTMLInputElement)).toBeTruthy();
+  });
+
   it('defaults payment terms to 0 and opens with empty fields when no params', () => {
     renderAt('/customers/new');
     // Payment-terms field seeded to "0"

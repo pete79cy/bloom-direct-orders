@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import { ArrowLeft, Loader2, Check, Plus } from 'lucide-react';
 import CustomerFormField from '@/components/CustomerFormField';
+import { readDeepLinkParam } from '@/lib/deep-link';
 import { useCreateCustomer } from '@/lib/queries';
 import type { Customer } from '@/types';
 
@@ -22,11 +23,11 @@ export default function AddCustomerPage() {
 
   // Pre-fill from query params (the Shortcut path). Read once on mount —
   // these are the seed values; the user edits the controlled state below.
-  const [tradingName, setTradingName] = useState(params.get('name')?.trim() ?? '');
+  const [tradingName, setTradingName] = useState(() => readDeepLinkParam(params, 'name'));
   const [legalName, setLegalName] = useState('');
   const [vatId, setVatId] = useState('');
-  const [phone, setPhone] = useState(params.get('phone')?.trim() ?? '');
-  const [email, setEmail] = useState(params.get('email')?.trim() ?? '');
+  const [phone, setPhone] = useState(() => readDeepLinkParam(params, 'phone'));
+  const [email, setEmail] = useState(() => readDeepLinkParam(params, 'email'));
   const [paymentDays, setPaymentDays] = useState('0');
 
   // After a successful save we hold the created customer to drive the
