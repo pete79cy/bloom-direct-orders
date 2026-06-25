@@ -66,8 +66,12 @@ export default function NewOrderWizard() {
   // already populated. Delivery date stays fresh (3 days out) and notes
   // start empty — both belong to the NEW order's context, not the source's.
   const duplicate = (location.state as { duplicate?: DuplicateSeed } | null)?.duplicate ?? null;
+  // A freshly-created customer handed in from AddCustomerPage ("Νέα
+  // παραγγελία τώρα"). Unlike `duplicate` it carries no lines and shows no
+  // "Επανάληψη" banner — it just preselects the customer and jumps to Step 2.
+  const presetCustomer = (location.state as { presetCustomer?: Customer } | null)?.presetCustomer ?? null;
 
-  const [customer, setCustomer] = useState<Customer | null>(duplicate?.customer ?? null);
+  const [customer, setCustomer] = useState<Customer | null>(duplicate?.customer ?? presetCustomer ?? null);
   const [deliveryDate, setDeliveryDate] = useState(addDays(isoToday(), 3));
   const [notes, setNotes] = useState('');
   const [lines, setLines] = useState<DraftLine[]>(() =>
@@ -119,17 +123,26 @@ export default function NewOrderWizard() {
   // customer is preset, and surface a toast so the user knows this is a
   // duplicated draft. The dependency on `duplicate` runs this once on mount.
   useEffect(() => {
-    if (!duplicate) return;
-    setStep(1);
-    const n = duplicate.lines.length;
-    toast.success(
-      duplicate.fromOrderNumber
-        ? `Επανάληψη ${duplicate.fromOrderNumber} · ${n} γραμμές`
-        : `Επανάληψη παραγγελίας · ${n} γραμμές`,
-      { description: 'Έλεγξε τις τιμές πριν την αποθήκευση.' },
-    );
-    // Clear location.state so a page reload doesn't re-trigger the seed.
-    navigate(location.pathname, { replace: true, state: {} });
+    if (duplicate) {
+      setStep(1);
+      const n = duplicate.lines.length;
+      toast.success(
+        duplicate.fromOrderNumber
+          ? `Επανάληψη ${duplicate.fromOrderNumber} · ${n} γραμμές`
+          : `Επανάληψη παραγγελίας · ${n} γραμμές`,
+        { description: 'Έλεγξε τις τιμές πριν την αποθήκευση.' },
+      );
+      // Clear location.state so a page reload doesn't re-trigger the seed.
+      navigate(location.pathname, { replace: true, state: {} });
+      return;
+    }
+    if (presetCustomer) {
+      // Preselected customer from AddCustomerPage — jump to Step 2 with an
+      // empty cart and no "Επανάληψη" banner.
+      setStep(1);
+      toast.success(`Νέα παραγγελία · ${presetCustomer.trading_name || presetCustomer.legal_name}`);
+      navigate(location.pathname, { replace: true, state: {} });
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

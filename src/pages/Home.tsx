@@ -1,5 +1,5 @@
 import { Link, useNavigate } from 'react-router-dom';
-import { Plus, LogOut } from 'lucide-react';
+import { Plus, LogOut, UserPlus } from 'lucide-react';
 import { useOrders, useCustomers } from '@/lib/queries';
 import { fmtShortDate, dayKey } from '@/lib/format';
 import { logout, getUser } from '@/lib/auth';
@@ -107,6 +107,26 @@ export default function Home() {
         <Link to="/orders/new" className="btn-primary ios-tap" style={{ height: 60, fontSize: 17 }}>
           <Plus size={20} color="var(--cream-50)" />
           Νέα Παραγγελία
+        </Link>
+      </div>
+
+      {/* Secondary: add a customer directly (also the target of the iOS
+          "Add to Bloom" Shortcut, which deep-links here pre-filled from a
+          phone contact). */}
+      <div style={{ padding: '10px 20px 0' }}>
+        <Link
+          to="/customers/new"
+          className="ios-tap"
+          style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+            height: 46, borderRadius: 14,
+            background: '#fff', border: '1px solid rgba(63,75,70,0.12)',
+            color: 'var(--sage-800)', fontSize: 15, fontWeight: 500,
+            textDecoration: 'none',
+          }}
+        >
+          <UserPlus size={18} strokeWidth={1.9} />
+          Νέος πελάτης
         </Link>
       </div>
 

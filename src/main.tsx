@@ -27,7 +27,7 @@ if (dsn) {
 // the flag is missing/stale. After the first successful run, the new
 // SW (registered by vite-plugin-pwa during App mount) takes over
 // cleanly with the autoUpdate config.
-const SW_RESET_VERSION = '2026-06-24-custphone-v7';
+const SW_RESET_VERSION = '2026-06-25-addcustomer-v8';
 async function oneShotSwReset() {
   if (typeof window === 'undefined' || !('serviceWorker' in navigator)) return;
   try {

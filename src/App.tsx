@@ -5,6 +5,7 @@ import Login from './pages/Login';
 import Home from './pages/Home';
 import OrdersList from './pages/OrdersList';
 import OrderDetail from './pages/OrderDetail';
+import AddCustomerPage from './pages/AddCustomerPage';
 import Calendar from './pages/Calendar';
 import NewOrderWizard from './pages/NewOrderWizard';
 import RequireAuth from './components/RequireAuth';
@@ -32,6 +33,7 @@ export default function App() {
           <Route path="/login" element={<Login />} />
           <Route path="/" element={<RequireAuth><Home /></RequireAuth>} />
           <Route path="/orders" element={<RequireAuth><OrdersList /></RequireAuth>} />
+          <Route path="/customers/new" element={<RequireAuth><AddCustomerPage /></RequireAuth>} />
           <Route path="/orders/new" element={<RequireAuth><NewOrderWizard /></RequireAuth>} />
           <Route path="/orders/:id" element={<RequireAuth><OrderDetail /></RequireAuth>} />
           <Route path="/calendar" element={<RequireAuth><Calendar /></RequireAuth>} />
