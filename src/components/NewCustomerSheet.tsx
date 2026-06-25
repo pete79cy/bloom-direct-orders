@@ -33,7 +33,8 @@ export default function NewCustomerSheet({
   const [tradingName, setTradingName] = useState(initialTradingName);
   const [legalName, setLegalName] = useState('');
   const [vatId, setVatId] = useState('');
-  const [paymentDays, setPaymentDays] = useState('30');
+  const [phone, setPhone] = useState('');
+  const [paymentDays, setPaymentDays] = useState('0');
 
   // Sync the pre-filled trading name when reopened with a new search query.
   useEffect(() => {
@@ -41,7 +42,8 @@ export default function NewCustomerSheet({
       setTradingName(initialTradingName);
       setLegalName('');
       setVatId('');
-      setPaymentDays('30');
+      setPhone('');
+      setPaymentDays('0');
     }
   }, [open, initialTradingName]);
 
@@ -54,7 +56,8 @@ export default function NewCustomerSheet({
         trading_name: tradingName.trim(),
         legal_name: legalName.trim() || undefined,
         vat_id: vatId.trim() || undefined,
-        payment_terms_days: Number.parseInt(paymentDays, 10) || 30,
+        phone: phone.trim() || undefined,
+        payment_terms_days: Number.parseInt(paymentDays, 10) || 0,
       });
       toast.success('Πελάτης προστέθηκε');
       onCreated(created);
@@ -128,6 +131,13 @@ export default function NewCustomerSheet({
           onChange={setVatId}
           placeholder="9 ψηφία"
           inputMode="numeric"
+        />
+        <Field
+          label="Τηλέφωνο"
+          value={phone}
+          onChange={setPhone}
+          placeholder="π.χ. 99123456"
+          inputMode="tel"
         />
         <Field
           label="Ημέρες πληρωμής"
