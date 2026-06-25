@@ -201,6 +201,7 @@ export interface CreateCustomerPayload {
   payment_terms_days?: number;
   notes?: string;
   phone?: string;
+  email?: string;
 }
 
 export function useCreateCustomer() {

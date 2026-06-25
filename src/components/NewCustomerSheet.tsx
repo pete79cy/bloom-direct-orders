@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { Loader2 } from 'lucide-react';
 import FullScreenSheet from './FullScreenSheet';
+import CustomerFormField from './CustomerFormField';
 import { useCreateCustomer } from '@/lib/queries';
 import type { Customer } from '@/types';
 
@@ -34,6 +35,7 @@ export default function NewCustomerSheet({
   const [legalName, setLegalName] = useState('');
   const [vatId, setVatId] = useState('');
   const [phone, setPhone] = useState('');
+  const [email, setEmail] = useState('');
   const [paymentDays, setPaymentDays] = useState('0');
 
   // Sync the pre-filled trading name when reopened with a new search query.
@@ -43,6 +45,7 @@ export default function NewCustomerSheet({
       setLegalName('');
       setVatId('');
       setPhone('');
+      setEmail('');
       setPaymentDays('0');
     }
   }, [open, initialTradingName]);
@@ -57,6 +60,7 @@ export default function NewCustomerSheet({
         legal_name: legalName.trim() || undefined,
         vat_id: vatId.trim() || undefined,
         phone: phone.trim() || undefined,
+        email: email.trim() || undefined,
         payment_terms_days: Number.parseInt(paymentDays, 10) || 0,
       });
       toast.success('Πελάτης προστέθηκε');
@@ -111,7 +115,7 @@ export default function NewCustomerSheet({
 
       {/* Form */}
       <div style={{ flex: 1, overflowY: 'auto', padding: '20px 20px 24px' }}>
-        <Field
+        <CustomerFormField
           label="Εμπορική επωνυμία"
           required
           value={tradingName}
@@ -119,27 +123,34 @@ export default function NewCustomerSheet({
           placeholder="π.χ. Anthotopos Athens"
           autoFocus
         />
-        <Field
+        <CustomerFormField
           label="Νομική επωνυμία"
           value={legalName}
           onChange={setLegalName}
           placeholder="π.χ. Ανθότοπος Αθηνών ΑΕ"
         />
-        <Field
+        <CustomerFormField
           label="ΑΦΜ"
           value={vatId}
           onChange={setVatId}
           placeholder="9 ψηφία"
           inputMode="numeric"
         />
-        <Field
+        <CustomerFormField
           label="Τηλέφωνο"
           value={phone}
           onChange={setPhone}
           placeholder="π.χ. 99123456"
           inputMode="tel"
         />
-        <Field
+        <CustomerFormField
+          label="Email"
+          value={email}
+          onChange={setEmail}
+          placeholder="π.χ. info@anthotopos.gr"
+          inputMode="email"
+        />
+        <CustomerFormField
           label="Ημέρες πληρωμής"
           value={paymentDays}
           onChange={setPaymentDays}
@@ -173,66 +184,5 @@ export default function NewCustomerSheet({
         </button>
       </div>
     </FullScreenSheet>
-  );
-}
-
-interface FieldProps {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-  placeholder?: string;
-  required?: boolean;
-  autoFocus?: boolean;
-  inputMode?: 'text' | 'numeric' | 'decimal' | 'email' | 'tel';
-}
-
-function Field({
-  label,
-  value,
-  onChange,
-  placeholder,
-  required,
-  autoFocus,
-  inputMode = 'text',
-}: FieldProps) {
-  return (
-    <label style={{ display: 'block', marginBottom: 16 }}>
-      <span
-        className="text-eyebrow"
-        style={{ fontSize: 9, marginBottom: 6, display: 'block', color: 'var(--ink-500)' }}
-      >
-        {label}
-        {required && (
-          <span style={{ color: 'var(--clay)', marginLeft: 4 }}>*</span>
-        )}
-      </span>
-      <input
-        type="text"
-        inputMode={inputMode}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
-        autoFocus={autoFocus}
-        style={{
-          width: '100%',
-          height: 46,
-          padding: '0 14px',
-          background: '#fff',
-          border: '1px solid rgba(63,75,70,0.12)',
-          borderRadius: 12,
-          fontSize: 16,
-          outline: 'none',
-          transition: 'border-color 160ms ease, box-shadow 160ms ease',
-        }}
-        onFocus={(e) => {
-          e.target.style.borderColor = 'var(--sage-400)';
-          e.target.style.boxShadow = '0 0 0 3px rgba(63,107,92,0.15)';
-        }}
-        onBlur={(e) => {
-          e.target.style.borderColor = 'rgba(63,75,70,0.12)';
-          e.target.style.boxShadow = 'none';
-        }}
-      />
-    </label>
   );
 }
