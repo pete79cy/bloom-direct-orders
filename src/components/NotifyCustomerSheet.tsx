@@ -37,29 +37,6 @@ export default function NotifyCustomerSheet({
     }
   }, [open, customerName, orderNumber, customerPhone]);
 
-  // TEMP diagnostics — surfaces the loaded build + live viewport numbers so
-  // we can see from a screenshot which bundle is active and why the footer
-  // sits where it does. Remove once the sheet layout is confirmed.
-  const [dbg, setDbg] = useState('');
-  useEffect(() => {
-    if (!open) return;
-    const read = () => {
-      const ih = Math.round(window.innerHeight);
-      const vh = Math.round(window.visualViewport?.height ?? 0);
-      const vt = Math.round(window.visualViewport?.offsetTop ?? 0);
-      // Probe the actual computed safe-area-inset-bottom.
-      const probe = document.createElement('div');
-      probe.style.cssText = 'position:fixed;bottom:0;height:env(safe-area-inset-bottom,0px);';
-      document.body.appendChild(probe);
-      const sab = Math.round(probe.getBoundingClientRect().height);
-      probe.remove();
-      setDbg(`${__BUILD_SHA__} ih${ih} vv${vh} vt${vt} sab${sab}`);
-    };
-    read();
-    window.visualViewport?.addEventListener('resize', read);
-    return () => window.visualViewport?.removeEventListener('resize', read);
-  }, [open]);
-
   const resolvedPhone = normalizeCyprusPhone(phoneInput);
   const canSend = resolvedPhone.length >= 8;
 
@@ -166,17 +143,6 @@ export default function NotifyCustomerSheet({
             background: 'var(--cream-50)',
           }}
         >
-          <div
-            style={{
-              fontFamily: 'monospace',
-              fontSize: 9,
-              color: 'var(--ink-500)',
-              textAlign: 'center',
-              marginBottom: 8,
-            }}
-          >
-            {dbg}
-          </div>
           <div style={{ display: 'flex', gap: 8 }}>
             {CHANNELS.map((c) => (
               <button
