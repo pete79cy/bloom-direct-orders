@@ -129,10 +129,16 @@ export default function NotifyCustomerSheet({
         </div>
 
         <div
-          className="pb-safe"
           style={{
             flexShrink: 0,
-            padding: '12px 16px 14px',
+            // Explicit per-side padding: a `padding` shorthand here would
+            // override the safe-area class via inline-style specificity and
+            // leave the buttons tucked behind the iOS home indicator. The
+            // max() guarantees a floor even when env() resolves to 0.
+            paddingTop: 12,
+            paddingLeft: 16,
+            paddingRight: 16,
+            paddingBottom: 'max(env(safe-area-inset-bottom, 0px), 16px)',
             borderTop: '1px solid rgba(63,75,70,0.08)',
             background: 'var(--cream-50)',
           }}

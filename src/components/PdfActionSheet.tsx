@@ -86,10 +86,15 @@ export default function PdfActionSheet({ open, onClose, busy, onGenerate }: Prop
         </div>
 
         <div
-          className="pb-safe"
           style={{
             flexShrink: 0,
-            padding: '12px 16px 14px',
+            // Explicit per-side padding — a `padding` shorthand would override
+            // the safe-area inset via inline-style specificity and tuck the
+            // button behind the iOS home indicator. max() floors it at 16px.
+            paddingTop: 12,
+            paddingLeft: 16,
+            paddingRight: 16,
+            paddingBottom: 'max(env(safe-area-inset-bottom, 0px), 16px)',
             borderTop: '1px solid rgba(63,75,70,0.08)',
             background: 'var(--cream-50)',
           }}

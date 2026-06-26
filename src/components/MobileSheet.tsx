@@ -193,7 +193,9 @@ export function MobileSheet({
           maxHeight: '100%',
           display: 'flex',
           flexDirection: 'column',
-          paddingBottom: 'env(safe-area-inset-bottom, 0px)',
+          // NOTE: no bottom safe-area padding here — consumers own their
+          // footer's bottom inset (see NotifyCustomerSheet / PdfActionSheet),
+          // so adding it here would double-pad and float the footer.
           boxShadow: '0 -8px 32px -8px rgba(31, 51, 41, 0.18)',
         }}
       >
