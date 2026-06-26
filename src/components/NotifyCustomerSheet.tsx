@@ -60,72 +60,103 @@ export default function NotifyCustomerSheet({
 
   return (
     <MobileSheet open={open} onClose={onClose} title="Ειδοποίηση πελάτη">
-      <div style={{ padding: '4px 4px 8px', display: 'flex', flexDirection: 'column', gap: 14 }}>
-        <div>
-          <label
-            className="text-eyebrow"
-            style={{ display: 'block', marginBottom: 6, color: 'var(--ink-500)' }}
-          >
-            Τηλέφωνο πελάτη
-          </label>
-          <input
-            value={phoneInput}
-            onChange={(e) => setPhoneInput(e.target.value)}
-            inputMode="tel"
-            placeholder="π.χ. 99123456"
-            style={{
-              width: '100%', height: 44, padding: '0 12px',
-              border: '1px solid rgba(63,75,70,0.18)', borderRadius: 12,
-              fontSize: 15, outline: 'none', background: '#fff',
-            }}
-          />
-          <div
-            className="font-mono-meta"
-            style={{ fontSize: 12, color: canSend ? 'var(--sage-700)' : 'var(--clay)', marginTop: 6 }}
-          >
-            {resolvedPhone ? `Αποστολή σε: ${resolvedPhone}` : 'Δεν υπάρχει τηλέφωνο — πρόσθεσέ το'}
+      {/* Scrollable fields + sticky channel bar — mirrors PdfActionSheet so
+          Viber/WhatsApp/SMS stay visible above the Safari bottom toolbar. */}
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          height: '100%',
+          minHeight: 0,
+        }}
+      >
+        <div
+          style={{
+            flex: 1,
+            minHeight: 0,
+            overflowY: 'auto',
+            padding: '4px 16px 12px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 14,
+          }}
+        >
+          <div>
+            <label
+              className="text-eyebrow"
+              style={{ display: 'block', marginBottom: 6, color: 'var(--ink-500)' }}
+            >
+              Τηλέφωνο πελάτη
+            </label>
+            <input
+              value={phoneInput}
+              onChange={(e) => setPhoneInput(e.target.value)}
+              inputMode="tel"
+              placeholder="π.χ. 99123456"
+              style={{
+                width: '100%', height: 44, padding: '0 12px',
+                border: '1px solid rgba(63,75,70,0.18)', borderRadius: 12,
+                fontSize: 15, outline: 'none', background: '#fff',
+              }}
+            />
+            <div
+              className="font-mono-meta"
+              style={{ fontSize: 12, color: canSend ? 'var(--sage-700)' : 'var(--clay)', marginTop: 6 }}
+            >
+              {resolvedPhone ? `Αποστολή σε: ${resolvedPhone}` : 'Δεν υπάρχει τηλέφωνο — πρόσθεσέ το'}
+            </div>
+          </div>
+
+          <div>
+            <label
+              className="text-eyebrow"
+              style={{ display: 'block', marginBottom: 6, color: 'var(--ink-500)' }}
+            >
+              Μήνυμα
+            </label>
+            <textarea
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
+              rows={4}
+              style={{
+                width: '100%', padding: 12, resize: 'vertical',
+                border: '1px solid rgba(63,75,70,0.18)', borderRadius: 12,
+                fontSize: 15, lineHeight: 1.4, outline: 'none', background: '#fff',
+                fontFamily: 'inherit',
+              }}
+            />
           </div>
         </div>
 
-        <div>
-          <label
-            className="text-eyebrow"
-            style={{ display: 'block', marginBottom: 6, color: 'var(--ink-500)' }}
-          >
-            Μήνυμα
-          </label>
-          <textarea
-            value={message}
-            onChange={(e) => setMessage(e.target.value)}
-            rows={4}
-            style={{
-              width: '100%', padding: 12, resize: 'vertical',
-              border: '1px solid rgba(63,75,70,0.18)', borderRadius: 12,
-              fontSize: 15, lineHeight: 1.4, outline: 'none', background: '#fff',
-              fontFamily: 'inherit',
-            }}
-          />
-        </div>
-
-        <div style={{ display: 'flex', gap: 8 }}>
-          {CHANNELS.map((c) => (
-            <button
-              key={c.id}
-              type="button"
-              onClick={() => void send(c.id)}
-              disabled={!canSend}
-              className="ios-tap"
-              style={{
-                flex: 1, height: 50, borderRadius: 14, border: 0,
-                background: canSend ? c.bg : 'var(--cream-200)',
-                color: canSend ? '#fff' : 'var(--ink-500)',
-                fontSize: 15, fontWeight: 600,
-                cursor: canSend ? 'pointer' : 'default',
-              }}
-            >
-              {c.label}
-            </button>
-          ))}
+        <div
+          className="pb-safe"
+          style={{
+            flexShrink: 0,
+            padding: '12px 16px 14px',
+            borderTop: '1px solid rgba(63,75,70,0.08)',
+            background: 'var(--cream-50)',
+          }}
+        >
+          <div style={{ display: 'flex', gap: 8 }}>
+            {CHANNELS.map((c) => (
+              <button
+                key={c.id}
+                type="button"
+                onClick={() => void send(c.id)}
+                disabled={!canSend}
+                className="ios-tap"
+                style={{
+                  flex: 1, height: 50, borderRadius: 14, border: 0,
+                  background: canSend ? c.bg : 'var(--cream-200)',
+                  color: canSend ? '#fff' : 'var(--ink-500)',
+                  fontSize: 15, fontWeight: 600,
+                  cursor: canSend ? 'pointer' : 'default',
+                }}
+              >
+                {c.label}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
     </MobileSheet>

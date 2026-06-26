@@ -30,45 +30,26 @@ export function MobileSheet({
   const [animState, setAnimState] = useState<'open' | 'closed'>(open ? 'open' : 'closed');
   const exitTimeout = useRef<number | null>(null);
 
-  // Track the visual viewport so the sheet can sit on top of the on-screen
-  // keyboard on iOS Safari. Without this, `bottom: 0` puts the sheet
-  // *behind* the keyboard, and `vh` units don't shrink when the keyboard
-  // appears — the input and results disappear from view as the user types.
-  const [keyboardInset, setKeyboardInset] = useState(0);
-  const [vvHeight, setVvHeight] = useState<number | null>(null);
+  // Track the visual viewport so the sheet sits above iOS Safari's bottom
+  // toolbar, home indicator, and on-screen keyboard. Without this, `bottom: 0`
+  // anchors to the layout viewport and action buttons end up behind chrome.
+  const [bottomInset, setBottomInset] = useState(0);
+  const [visibleHeight, setVisibleHeight] = useState<number | null>(null);
 
   useEffect(() => {
     if (!shouldRender || typeof window === 'undefined') return;
     const vv = window.visualViewport;
 
-    // Distinguish "keyboard is up" from "URL bar / toolbar is showing".
-    // iOS Safari's URL bar takes up to ~85px of vertical space, which
-    // would otherwise be misread as a keyboard inset, causing the sheet
-    // to shift up and shrink even with no keyboard present.
-    //
-    // Threshold of 100px reliably separates URL-bar chrome (≤ ~85px)
-    // from any real on-screen keyboard (always ≥ ~250px on phones).
-    const KEYBOARD_THRESHOLD_PX = 100;
-
     const update = () => {
       const layoutH = window.innerHeight;
       const visualH = vv?.height ?? layoutH;
-      const heightDiff = layoutH - visualH;
       const offsetTop = vv?.offsetTop ?? 0;
-      const keyboardOpen = heightDiff > KEYBOARD_THRESHOLD_PX;
+      // Space hidden below the visible viewport (Safari toolbar, keyboard).
+      const obscuredBottom = Math.max(0, layoutH - visualH - offsetTop);
+      const nextVisibleHeight = Math.max(160, visualH - 12);
 
-      if (keyboardOpen) {
-        // Real keyboard — lift the sheet by the hidden amount and clamp
-        // max-height to the visible viewport.
-        const inset = Math.max(0, heightDiff - offsetTop);
-        setVvHeight((prev) => (prev !== visualH ? visualH : prev));
-        setKeyboardInset((prev) => (prev !== inset ? inset : prev));
-      } else {
-        // No keyboard. Reset to defaults so the sheet sits at the bottom
-        // and uses the standard 88vh cap (signalled by vvHeight === null).
-        setVvHeight((prev) => (prev !== null ? null : prev));
-        setKeyboardInset((prev) => (prev !== 0 ? 0 : prev));
-      }
+      setVisibleHeight((prev) => (prev !== nextVisibleHeight ? nextVisibleHeight : prev));
+      setBottomInset((prev) => (prev !== obscuredBottom ? obscuredBottom : prev));
     };
     update();
 
@@ -147,14 +128,34 @@ export function MobileSheet({
     // Compensate for the scrollbar disappearing on desktop, so the page
     // doesn't jump 15px to the right when the lock kicks in.
     const scrollbarWidth = window.innerWidth - document.documentElement.clientWidth;
+    const scrollY = window.scrollY;
     const prevOverflow = document.body.style.overflow;
     const prevPadding = document.body.style.paddingRight;
+    const prevPosition = document.body.style.position;
+    const prevTop = document.body.style.top;
+    const prevLeft = document.body.style.left;
+    const prevRight = document.body.style.right;
+    const prevWidth = document.body.style.width;
+    // position:fixed prevents iOS Safari from jumping scroll to top when
+    // overflow:hidden is applied — without this the backdrop shows the
+    // wrong slice of the page (status timeline under the status bar).
+    document.body.style.position = 'fixed';
+    document.body.style.top = `-${scrollY}px`;
+    document.body.style.left = '0';
+    document.body.style.right = '0';
+    document.body.style.width = '100%';
     document.body.style.overflow = 'hidden';
     if (scrollbarWidth > 0) document.body.style.paddingRight = `${scrollbarWidth}px`;
     return () => {
       window.removeEventListener('keydown', onKey);
       document.body.style.overflow = prevOverflow;
       document.body.style.paddingRight = prevPadding;
+      document.body.style.position = prevPosition;
+      document.body.style.top = prevTop;
+      document.body.style.left = prevLeft;
+      document.body.style.right = prevRight;
+      document.body.style.width = prevWidth;
+      window.scrollTo(0, scrollY);
     };
   }, [shouldRender, onClose]);
 
@@ -190,28 +191,19 @@ export function MobileSheet({
           position: 'absolute',
           left: 0,
           right: 0,
-          // Shift the sheet UP by the height of the on-screen keyboard so
-          // it stays fully visible (instead of hiding behind it).
-          bottom: keyboardInset,
+          // Lift above Safari bottom toolbar / keyboard obscured area.
+          bottom: bottomInset,
           background: 'var(--cream-50)',
           borderTopLeftRadius: 20,
           borderTopRightRadius: 20,
-          // When the keyboard is up, constrain the sheet to fit within the
-          // shrunken visual viewport (with a 24px top breathing space).
-          //
-          // Otherwise: use min(88vh, calc(100dvh - 24px)). The 88vh path is
-          // the established cap when there's no browser chrome eating into
-          // the viewport (e.g. installed PWA). 100dvh excludes iOS Safari's
-          // dynamic browser chrome (the bottom toolbar) so the sheet doesn't
-          // extend behind it on a regular Safari tab. min() picks whichever
-          // is smaller. Supported on iOS Safari 15.4+ (March 2022); older
-          // browsers gracefully ignore the calc() and fall back to 88vh.
-          maxHeight: vvHeight !== null
-            ? `${Math.max(160, vvHeight - 24)}px`
+          // Always clamp to the live visual viewport height so action
+          // buttons stay on-screen (PWA + Safari tab).
+          maxHeight: visibleHeight !== null
+            ? `${visibleHeight}px`
             : 'min(88vh, calc(100dvh - 24px))',
           display: 'flex',
           flexDirection: 'column',
-          paddingBottom: keyboardInset > 0 ? 0 : `env(safe-area-inset-bottom, 0px)`,
+          paddingBottom: bottomInset > 0 ? 0 : `env(safe-area-inset-bottom, 0px)`,
           boxShadow: '0 -8px 32px -8px rgba(31, 51, 41, 0.18)',
           // Combined transition: preserve the slide-in transform AND smooth
           // the keyboard-inset shift. (Class `.ios-sheet` already sets the
@@ -255,7 +247,7 @@ export function MobileSheet({
             </div>
           </div>
         )}
-        <div style={{ flex: 1, overflowY: 'auto' }}>{children}</div>
+        <div style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>{children}</div>
       </div>
     </div>,
     document.body,
