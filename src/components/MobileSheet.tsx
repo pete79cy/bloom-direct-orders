@@ -6,14 +6,22 @@ import { createPortal } from 'react-dom';
  *
  * Animation uses the data-state pattern (Radix-style) so BOTH enter and
  * exit play. The component stays mounted for the exit duration, then
- * unmounts. Transitions can be retargeted mid-animation if the user
- * opens/closes rapidly — keyframes can't.
+ * unmounts.
  *
- * - Sheet panel: 320ms transform with the iOS drawer curve
- * - Backdrop: 200ms opacity, ease-out
- * - Click on backdrop or Escape closes
- * - Body scroll is locked while open; scrollbar gap compensated on
- *   desktop so the page doesn't jump
+ * iOS Safari toolbar / keyboard handling — the important bit:
+ * A `position: fixed` element is laid out against the LAYOUT viewport,
+ * which in iOS Safari extends BEHIND the bottom toolbar. So `bottom: 0`
+ * sits behind the toolbar, hiding a sheet's action buttons. You cannot
+ * detect the toolbar by comparing innerHeight to visualViewport.height —
+ * both already exclude it, so the difference is ~0.
+ *
+ * The robust fix used here: size the SHELL to the visual viewport
+ * (`top: visualViewport.offsetTop`, `height: visualViewport.height`).
+ * The visual viewport is the truly-visible area — it excludes the Safari
+ * toolbar AND shrinks when the keyboard opens. With the shell pinned to
+ * it, the sheet's `bottom: 0` is always the bottom of what the user can
+ * see, so a pinned footer stays on-screen in every case. Falls back to
+ * `100dvh` when visualViewport is unavailable.
  */
 export function MobileSheet({
   open,
@@ -30,48 +38,34 @@ export function MobileSheet({
   const [animState, setAnimState] = useState<'open' | 'closed'>(open ? 'open' : 'closed');
   const exitTimeout = useRef<number | null>(null);
 
-  // Track the visual viewport so the sheet sits above iOS Safari's bottom
-  // toolbar, home indicator, and on-screen keyboard. Without this, `bottom: 0`
-  // anchors to the layout viewport and action buttons end up behind chrome.
-  const [bottomInset, setBottomInset] = useState(0);
-  const [visibleHeight, setVisibleHeight] = useState<number | null>(null);
+  // The shell is sized + positioned to the visual viewport so its bottom
+  // edge is the bottom of the *visible* area (above toolbar + keyboard).
+  const [vvHeight, setVvHeight] = useState<number | null>(null);
+  const [vvTop, setVvTop] = useState(0);
 
   useEffect(() => {
     if (!shouldRender || typeof window === 'undefined') return;
     const vv = window.visualViewport;
 
     const update = () => {
-      const layoutH = window.innerHeight;
-      const visualH = vv?.height ?? layoutH;
-      const offsetTop = vv?.offsetTop ?? 0;
-      // Space hidden below the visible viewport (Safari toolbar, keyboard).
-      const obscuredBottom = Math.max(0, layoutH - visualH - offsetTop);
-      const nextVisibleHeight = Math.max(160, visualH - 12);
-
-      setVisibleHeight((prev) => (prev !== nextVisibleHeight ? nextVisibleHeight : prev));
-      setBottomInset((prev) => (prev !== obscuredBottom ? obscuredBottom : prev));
+      const h = vv?.height ?? window.innerHeight;
+      const t = vv?.offsetTop ?? 0;
+      setVvHeight((prev) => (prev !== h ? h : prev));
+      setVvTop((prev) => (prev !== t ? t : prev));
     };
     update();
 
-    // Primary signal — visualViewport (when iOS bothers to fire it).
     vv?.addEventListener('resize', update);
     vv?.addEventListener('scroll', update);
-
-    // Backup signals — these catch some iOS Safari edge cases where the
-    // visualViewport event doesn't fire on keyboard dismissal (e.g. when
-    // the user taps outside an input rather than hitting "Done").
     window.addEventListener('resize', update);
     window.addEventListener('orientationchange', update);
-    const onFocusChange = () => {
-      // Defer one frame so the OS has time to start the keyboard transition.
-      requestAnimationFrame(update);
-    };
+    // iOS sometimes skips the visualViewport event on keyboard dismissal
+    // when the user taps away rather than hitting "Done" — defer a frame.
+    const onFocusChange = () => requestAnimationFrame(update);
     document.addEventListener('focusin', onFocusChange);
     document.addEventListener('focusout', onFocusChange);
-
-    // Last-resort safety net: poll at 4 Hz while the sheet is open.
-    // The setState bail-out above keeps this cheap — no re-renders unless
-    // the viewport actually changed.
+    // Last-resort poll; the setState bail-outs above keep it free of
+    // re-renders unless the viewport actually moved.
     const interval = window.setInterval(update, 250);
 
     return () => {
@@ -88,15 +82,12 @@ export function MobileSheet({
   // Drive mount + animState lifecycle from `open`
   useEffect(() => {
     if (open) {
-      // Cancel any pending unmount
       if (exitTimeout.current) {
         window.clearTimeout(exitTimeout.current);
         exitTimeout.current = null;
       }
       setShouldRender(true);
       setAnimState('closed');
-      // Two rAF tick: paint with closed transform first, then flip — gives
-      // the browser a real "from" state to transition from.
       const r1 = requestAnimationFrame(() => {
         const r2 = requestAnimationFrame(() => setAnimState('open'));
         return () => cancelAnimationFrame(r2);
@@ -104,7 +95,6 @@ export function MobileSheet({
       return () => cancelAnimationFrame(r1);
     } else {
       setAnimState('closed');
-      // Match the longest transition (sheet panel = 320ms) before unmount
       exitTimeout.current = window.setTimeout(() => {
         setShouldRender(false);
         exitTimeout.current = null;
@@ -125,8 +115,6 @@ export function MobileSheet({
       if (e.key === 'Escape') onClose();
     };
     window.addEventListener('keydown', onKey);
-    // Compensate for the scrollbar disappearing on desktop, so the page
-    // doesn't jump 15px to the right when the lock kicks in.
     const scrollbarWidth = window.innerWidth - document.documentElement.clientWidth;
     const scrollY = window.scrollY;
     const prevOverflow = document.body.style.overflow;
@@ -138,7 +126,7 @@ export function MobileSheet({
     const prevWidth = document.body.style.width;
     // position:fixed prevents iOS Safari from jumping scroll to top when
     // overflow:hidden is applied — without this the backdrop shows the
-    // wrong slice of the page (status timeline under the status bar).
+    // wrong slice of the page.
     document.body.style.position = 'fixed';
     document.body.style.top = `-${scrollY}px`;
     document.body.style.left = '0';
@@ -165,13 +153,18 @@ export function MobileSheet({
     <div
       className="ios-shell"
       data-state={animState}
-      // pointer-events follow animState so a closed-but-not-yet-unmounted sheet
-      // can't swallow clicks intended for the page underneath
+      // Pinned to the VISUAL viewport, not `inset: 0`. This is what keeps a
+      // sheet's footer above the iOS Safari bottom toolbar + keyboard.
       style={{
         position: 'fixed',
-        inset: 0,
+        left: 0,
+        right: 0,
+        top: vvTop,
+        height: vvHeight !== null ? `${vvHeight}px` : '100dvh',
         zIndex: 1200,
         pointerEvents: animState === 'open' ? 'auto' : 'none',
+        // Smooth the height/position change when the keyboard opens/closes.
+        transition: 'height 220ms var(--ease-drawer), top 220ms var(--ease-drawer)',
       }}
     >
       <div
@@ -191,27 +184,17 @@ export function MobileSheet({
           position: 'absolute',
           left: 0,
           right: 0,
-          // Lift above Safari bottom toolbar / keyboard obscured area.
-          bottom: bottomInset,
+          bottom: 0,
           background: 'var(--cream-50)',
           borderTopLeftRadius: 20,
           borderTopRightRadius: 20,
-          // Always clamp to the live visual viewport height so action
-          // buttons stay on-screen (PWA + Safari tab).
-          maxHeight: visibleHeight !== null
-            ? `${visibleHeight}px`
-            : 'min(88vh, calc(100dvh - 24px))',
+          // Clamp to the shell (= visible area) so a tall sheet still leaves
+          // the footer on-screen; short content hugs the bottom.
+          maxHeight: '100%',
           display: 'flex',
           flexDirection: 'column',
-          paddingBottom: bottomInset > 0 ? 0 : `env(safe-area-inset-bottom, 0px)`,
+          paddingBottom: 'env(safe-area-inset-bottom, 0px)',
           boxShadow: '0 -8px 32px -8px rgba(31, 51, 41, 0.18)',
-          // Combined transition: preserve the slide-in transform AND smooth
-          // the keyboard-inset shift. (Class `.ios-sheet` already sets the
-          // 320ms transform; we extend it here.)
-          transition:
-            'transform 320ms var(--ease-drawer), ' +
-            'bottom 220ms var(--ease-drawer), ' +
-            'max-height 220ms var(--ease-drawer)',
         }}
       >
         <div
@@ -222,6 +205,7 @@ export function MobileSheet({
             borderRadius: 2,
             background: 'var(--ios-ink-quad)',
             margin: '8px auto 2px',
+            flexShrink: 0,
           }}
         />
         {title && (
@@ -230,6 +214,7 @@ export function MobileSheet({
               textAlign: 'center',
               padding: '12px 16px 14px',
               borderBottom: '0.5px solid var(--ios-separator)',
+              flexShrink: 0,
             }}
           >
             <div
@@ -247,7 +232,9 @@ export function MobileSheet({
             </div>
           </div>
         )}
-        <div style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>{children}</div>
+        <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+          {children}
+        </div>
       </div>
     </div>,
     document.body,
