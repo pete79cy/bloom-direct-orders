@@ -138,6 +138,28 @@ export function useCreateAmendment() {
   });
 }
 
+// ── Google Contacts (add-customer-from-contact picker) ─────────────────────
+// Backed by GET /api/google-contacts on bloom-crm (People API). The PWA
+// fetches the full list once and filters client-side. The endpoint returns
+// 409 { error: 'not_connected' | 'scope_missing' } when Google isn't linked
+// or the contacts permission wasn't granted — surfaced via the query error
+// (ApiError.payload.error) so the picker can show a connect/re-authorize hint.
+export interface GoogleContact {
+  name: string;
+  phone: string;
+  email: string;
+}
+
+export function useGoogleContacts(enabled: boolean) {
+  return useQuery({
+    queryKey: ['google-contacts'],
+    enabled,
+    staleTime: 5 * 60 * 1000,
+    retry: false,
+    queryFn: () => apiFetch<GoogleContact[]>('/api/google-contacts'),
+  });
+}
+
 export function useNotifyCustomer() {
   const qc = useQueryClient();
   return useMutation({

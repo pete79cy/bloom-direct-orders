@@ -1,10 +1,11 @@
 import { useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
-import { ArrowLeft, Loader2, Check, Plus } from 'lucide-react';
+import { ArrowLeft, Loader2, Check, Plus, Contact } from 'lucide-react';
 import CustomerFormField from '@/components/CustomerFormField';
+import GoogleContactsPicker from '@/components/GoogleContactsPicker';
 import { readDeepLinkParam } from '@/lib/deep-link';
-import { useCreateCustomer } from '@/lib/queries';
+import { useCreateCustomer, type GoogleContact } from '@/lib/queries';
 import type { Customer } from '@/types';
 
 /**
@@ -33,6 +34,14 @@ export default function AddCustomerPage() {
   // After a successful save we hold the created customer to drive the
   // "Νέα παραγγελία τώρα;" success view.
   const [created, setCreated] = useState<Customer | null>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
+
+  function applyContact(c: GoogleContact) {
+    setTradingName(c.name);
+    setPhone(c.phone);
+    setEmail(c.email);
+    setPickerOpen(false);
+  }
 
   const canSave = tradingName.trim().length > 0 && !create.isPending;
 
@@ -141,6 +150,22 @@ export default function AddCustomerPage() {
         <>
           {/* Form */}
           <div style={{ flex: 1, overflowY: 'auto', padding: '12px 20px 24px' }}>
+            {/* Pull a customer straight from Google Contacts. */}
+            <button
+              type="button"
+              onClick={() => setPickerOpen(true)}
+              className="ios-tap"
+              style={{
+                width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                height: 46, marginBottom: 18, borderRadius: 14,
+                background: '#fff', border: '1px solid rgba(63,75,70,0.14)',
+                color: 'var(--sage-800)', fontSize: 15, fontWeight: 600, cursor: 'pointer',
+              }}
+            >
+              <Contact size={18} strokeWidth={1.9} />
+              Από Google επαφές
+            </button>
+
             <CustomerFormField
               label="Εμπορική επωνυμία"
               required
@@ -207,6 +232,12 @@ export default function AddCustomerPage() {
           </div>
         </>
       )}
+
+      <GoogleContactsPicker
+        open={pickerOpen}
+        onClose={() => setPickerOpen(false)}
+        onPick={applyContact}
+      />
     </div>
   );
 }
