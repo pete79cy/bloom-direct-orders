@@ -116,12 +116,13 @@ export default function GoogleContactsPicker({ open, onClose, onPick }: Props) {
             }}
           >
             <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--ink-900)', marginBottom: 8 }}>
-              {errorCode === 'not_connected' ? 'Ο Google λογαριασμός δεν είναι συνδεδεμένος' : 'Λείπει η άδεια για τις επαφές'}
+              {errorCode === 'not_connected' ? 'Δεν έχει συνδεθεί λογαριασμός επαφών' : 'Λείπει η άδεια για τις επαφές'}
             </div>
             <p style={{ fontSize: 14, color: 'var(--ink-500)' }}>
-              Σύνδεσε / ξανασύνδεσε τον Google λογαριασμό σου από το desktop:
-              {' '}<strong>smartquotations.eu → Ρυθμίσεις → Gmail</strong>. Μετά την
-              εξουσιοδότηση, οι επαφές σου θα εμφανίζονται εδώ.
+              Σύνδεσε τον Google λογαριασμό που έχει τις επαφές σου από το desktop:
+              {' '}<strong>smartquotations.eu → Ρυθμίσεις → Google Contacts</strong> →
+              «Connect Google Contacts». Μπορεί να είναι <strong>διαφορετικός</strong> λογαριασμός
+              από το Gmail. Μετά, οι επαφές θα εμφανίζονται εδώ.
             </p>
           </div>
         )}
