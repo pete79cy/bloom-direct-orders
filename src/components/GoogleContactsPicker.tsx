@@ -23,10 +23,12 @@ export default function GoogleContactsPicker({ open, onClose, onPick }: Props) {
   const [query, setQuery] = useState('');
   const { data: contacts = [], isLoading, isError, error } = useGoogleContacts(open);
 
-  const errorCode =
+  const errorPayload =
     error instanceof ApiError && error.payload && typeof error.payload === 'object'
-      ? String((error.payload as { error?: unknown }).error ?? '')
-      : '';
+      ? (error.payload as { error?: unknown; detail?: unknown })
+      : null;
+  const errorCode = errorPayload ? String(errorPayload.error ?? '') : '';
+  const errorDetail = errorPayload && errorPayload.detail ? String(errorPayload.detail) : '';
 
   const enriched = useMemo(
     () =>
@@ -108,7 +110,7 @@ export default function GoogleContactsPicker({ open, onClose, onPick }: Props) {
           </div>
         )}
 
-        {isError && (errorCode === 'not_connected' || errorCode === 'scope_missing') && (
+        {isError && (errorCode === 'not_connected' || errorCode === 'scope_missing' || errorCode === 'api_disabled') && (
           <div
             style={{
               background: '#fff', borderRadius: 14, boxShadow: 'var(--shadow-card)',
@@ -116,18 +118,40 @@ export default function GoogleContactsPicker({ open, onClose, onPick }: Props) {
             }}
           >
             <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--ink-900)', marginBottom: 8 }}>
-              {errorCode === 'not_connected' ? 'Δεν έχει συνδεθεί λογαριασμός επαφών' : 'Λείπει η άδεια για τις επαφές'}
+              {errorCode === 'not_connected'
+                ? 'Δεν έχει συνδεθεί λογαριασμός επαφών'
+                : errorCode === 'api_disabled'
+                  ? 'Το People API δεν είναι ενεργό'
+                  : 'Λείπει η άδεια για τις επαφές'}
             </div>
-            <p style={{ fontSize: 14, color: 'var(--ink-500)' }}>
-              Σύνδεσε τον Google λογαριασμό που έχει τις επαφές σου από το desktop:
-              {' '}<strong>smartquotations.eu → Ρυθμίσεις → Google Contacts</strong> →
-              «Connect Google Contacts». Μπορεί να είναι <strong>διαφορετικός</strong> λογαριασμός
-              από το Gmail. Μετά, οι επαφές θα εμφανίζονται εδώ.
-            </p>
+            {errorCode === 'api_disabled' ? (
+              <p style={{ fontSize: 14, color: 'var(--ink-500)' }}>
+                Ενεργοποίησε το <strong>People API</strong> στο Google Cloud Console του project
+                (APIs &amp; Services → Library → People API → Enable), μετά δοκίμασε ξανά.
+              </p>
+            ) : errorCode === 'scope_missing' ? (
+              <p style={{ fontSize: 14, color: 'var(--ink-500)' }}>
+                Ο λογαριασμός συνδέθηκε αλλά <strong>δεν δόθηκε η άδεια επαφών</strong>. Από το desktop:
+                {' '}<strong>Ρυθμίσεις → Google Contacts → Disconnect → Connect ξανά</strong>, και στην
+                οθόνη του Google <strong>τσέκαρε/άφησε ενεργό το «See your contacts»</strong>.
+              </p>
+            ) : (
+              <p style={{ fontSize: 14, color: 'var(--ink-500)' }}>
+                Σύνδεσε τον Google λογαριασμό που έχει τις επαφές σου από το desktop:
+                {' '}<strong>smartquotations.eu → Ρυθμίσεις → Google Contacts</strong> →
+                «Connect Google Contacts». Μπορεί να είναι <strong>διαφορετικός</strong> λογαριασμός
+                από το Gmail.
+              </p>
+            )}
+            {errorDetail && (
+              <p style={{ fontSize: 11, fontFamily: 'monospace', color: 'var(--ink-300)', marginTop: 10, wordBreak: 'break-word' }}>
+                {errorDetail}
+              </p>
+            )}
           </div>
         )}
 
-        {isError && errorCode !== 'not_connected' && errorCode !== 'scope_missing' && (
+        {isError && errorCode !== 'not_connected' && errorCode !== 'scope_missing' && errorCode !== 'api_disabled' && (
           <div style={{ padding: 24, textAlign: 'center', color: 'var(--clay)', fontSize: 14 }}>
             Αποτυχία φόρτωσης επαφών. Δοκίμασε ξανά.
           </div>
