@@ -8,20 +8,20 @@ import { createPortal } from 'react-dom';
  * exit play. The component stays mounted for the exit duration, then
  * unmounts.
  *
- * iOS Safari toolbar / keyboard handling — the important bit:
- * A `position: fixed` element is laid out against the LAYOUT viewport,
- * which in iOS Safari extends BEHIND the bottom toolbar. So `bottom: 0`
- * sits behind the toolbar, hiding a sheet's action buttons. You cannot
- * detect the toolbar by comparing innerHeight to visualViewport.height —
- * both already exclude it, so the difference is ~0.
+ * iOS bottom-anchor + keyboard handling — the important bit:
+ * Don't try to COMPUTE the visible height. In an iOS standalone PWA,
+ * `innerHeight` / `visualViewport.height` report the full layout viewport
+ * (including the regions behind the status bar + home indicator), so a
+ * shell sized to that number extends ~90px below the truly-visible area
+ * and pushes the sheet's footer off-screen. No measured height unit
+ * (vh/dvh/svh/visualViewport) gives the right "visible bottom" here.
  *
- * The robust fix used here: size the SHELL to the visual viewport
- * (`top: visualViewport.offsetTop`, `height: visualViewport.height`).
- * The visual viewport is the truly-visible area — it excludes the Safari
- * toolbar AND shrinks when the keyboard opens. With the shell pinned to
- * it, the sheet's `bottom: 0` is always the bottom of what the user can
- * see, so a pinned footer stays on-screen in every case. Falls back to
- * `100dvh` when visualViewport is unavailable.
+ * Instead, let iOS place the sheet with `position: fixed; bottom: 0` —
+ * which reliably anchors to the real visible bottom (above the home
+ * indicator in a PWA, above the toolbar in a Safari tab). The visual
+ * viewport is used ONLY to lift the sheet above the on-screen keyboard:
+ * `keyboardInset = max(0, innerHeight - visualViewport.height - offsetTop)`
+ * is ~0 normally and the keyboard's height when it's open.
  */
 export function MobileSheet({
   open,
@@ -38,20 +38,21 @@ export function MobileSheet({
   const [animState, setAnimState] = useState<'open' | 'closed'>(open ? 'open' : 'closed');
   const exitTimeout = useRef<number | null>(null);
 
-  // The shell is sized + positioned to the visual viewport so its bottom
-  // edge is the bottom of the *visible* area (above toolbar + keyboard).
-  const [vvHeight, setVvHeight] = useState<number | null>(null);
-  const [vvTop, setVvTop] = useState(0);
+  // Distance the on-screen keyboard (or other transient bottom chrome)
+  // obscures from the bottom of the layout viewport. ~0 normally; the
+  // keyboard's height when it's open. Used to lift the bottom-anchored
+  // sheet above the keyboard.
+  const [keyboardInset, setKeyboardInset] = useState(0);
 
   useEffect(() => {
     if (!shouldRender || typeof window === 'undefined') return;
     const vv = window.visualViewport;
 
     const update = () => {
-      const h = vv?.height ?? window.innerHeight;
-      const t = vv?.offsetTop ?? 0;
-      setVvHeight((prev) => (prev !== h ? h : prev));
-      setVvTop((prev) => (prev !== t ? t : prev));
+      const obscured = vv
+        ? Math.max(0, window.innerHeight - vv.height - vv.offsetTop)
+        : 0;
+      setKeyboardInset((prev) => (prev !== obscured ? obscured : prev));
     };
     update();
 
@@ -153,18 +154,11 @@ export function MobileSheet({
     <div
       className="ios-shell"
       data-state={animState}
-      // Pinned to the VISUAL viewport, not `inset: 0`. This is what keeps a
-      // sheet's footer above the iOS Safari bottom toolbar + keyboard.
       style={{
         position: 'fixed',
-        left: 0,
-        right: 0,
-        top: vvTop,
-        height: vvHeight !== null ? `${vvHeight}px` : '100dvh',
+        inset: 0,
         zIndex: 1200,
         pointerEvents: animState === 'open' ? 'auto' : 'none',
-        // Smooth the height/position change when the keyboard opens/closes.
-        transition: 'height 220ms var(--ease-drawer), top 220ms var(--ease-drawer)',
       }}
     >
       <div
@@ -181,22 +175,24 @@ export function MobileSheet({
         aria-modal="true"
         aria-label={title || 'Sheet'}
         style={{
-          position: 'absolute',
+          // `position: fixed; bottom` lets iOS anchor the sheet to the true
+          // visible bottom (above the home indicator / Safari toolbar) — no
+          // measured-height guesswork. keyboardInset lifts it above the
+          // on-screen keyboard when one is open.
+          position: 'fixed',
           left: 0,
           right: 0,
-          bottom: 0,
+          bottom: keyboardInset,
           background: 'var(--cream-50)',
           borderTopLeftRadius: 20,
           borderTopRightRadius: 20,
-          // Clamp to the shell (= visible area) so a tall sheet still leaves
-          // the footer on-screen; short content hugs the bottom.
-          maxHeight: '100%',
+          maxHeight: `calc(100dvh - ${keyboardInset}px - 12px)`,
           display: 'flex',
           flexDirection: 'column',
           // NOTE: no bottom safe-area padding here — consumers own their
-          // footer's bottom inset (see NotifyCustomerSheet / PdfActionSheet),
-          // so adding it here would double-pad and float the footer.
+          // footer's bottom inset (see NotifyCustomerSheet / PdfActionSheet).
           boxShadow: '0 -8px 32px -8px rgba(31, 51, 41, 0.18)',
+          transition: 'bottom 220ms var(--ease-drawer)',
         }}
       >
         <div
