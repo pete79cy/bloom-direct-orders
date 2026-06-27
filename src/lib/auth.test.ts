@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { login, logout, getToken, getUser, isLoggedIn } from './auth';
+import { login, logout, getToken, getUser, isLoggedIn, tokenFromHash } from './auth';
 
 const fetchMock = vi.fn();
 vi.stubGlobal('fetch', fetchMock);
@@ -41,5 +41,20 @@ describe('auth', () => {
     expect(getToken()).toBeNull();
     expect(getUser()).toBeNull();
     expect(isLoggedIn()).toBe(false);
+  });
+});
+
+describe('tokenFromHash', () => {
+  it('extracts a token from a #token=... fragment', () => {
+    expect(tokenFromHash('#token=a.b.c')).toBe('a.b.c');
+  });
+  it('returns null for an empty hash', () => {
+    expect(tokenFromHash('')).toBeNull();
+  });
+  it('returns null when there is no token param', () => {
+    expect(tokenFromHash('#foo=1')).toBeNull();
+  });
+  it('URL-decodes the token', () => {
+    expect(tokenFromHash('#token=a%20b')).toBe('a b');
   });
 });

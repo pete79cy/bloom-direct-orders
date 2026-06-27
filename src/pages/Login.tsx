@@ -1,7 +1,7 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { toast } from 'sonner';
-import { login } from '@/lib/auth';
+import { login, completeSsoLogin, tokenFromHash } from '@/lib/auth';
 import { ApiError } from '@/lib/api';
 import LeafMark from '@/components/LeafMark';
 
@@ -18,6 +18,21 @@ export default function Login() {
   const [password, setPassword] = useState('');
   const [rememberMe, setRememberMe] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+
+  // SSO handoff: bloom-crm redirects here with the JWT in the URL fragment
+  // (#token=...). Consume it, store the session, then enter the app.
+  useEffect(() => {
+    const token = tokenFromHash(window.location.hash);
+    if (!token) return;
+    window.history.replaceState(null, '', window.location.pathname);
+    completeSsoLogin(token, true)
+      .then(() => navigate(from, { replace: true }))
+      .catch((err) => {
+        const msg = err instanceof Error ? err.message : 'Πρόβλημα σύνδεσης';
+        toast.error(msg);
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
