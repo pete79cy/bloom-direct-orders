@@ -40,6 +40,24 @@ export async function login(
   return res.user;
 }
 
+/** Extract a handoff JWT from a `#token=...` fragment (SSO callback). */
+export function tokenFromHash(hash: string): string | null {
+  const m = /(?:^#|&)token=([^&]+)/.exec(hash || '');
+  return m ? decodeURIComponent(m[1]) : null;
+}
+
+/** Complete an SSO handoff: store the token, then fetch + store the user. */
+export async function completeSsoLogin(token: string, rememberMe: boolean): Promise<AuthUser> {
+  const store = rememberMe ? window.localStorage : window.sessionStorage;
+  const other = rememberMe ? window.sessionStorage : window.localStorage;
+  other.removeItem(TOKEN_KEY);
+  other.removeItem(USER_KEY);
+  store.setItem(TOKEN_KEY, token);
+  const res = await apiFetch<{ user: AuthUser }>('/api/auth/me');
+  store.setItem(USER_KEY, JSON.stringify(res.user));
+  return res.user;
+}
+
 export function logout(): void {
   window.localStorage.removeItem(TOKEN_KEY);
   window.localStorage.removeItem(USER_KEY);
