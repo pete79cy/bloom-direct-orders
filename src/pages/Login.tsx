@@ -135,6 +135,19 @@ export default function Login() {
           </button>
         </form>
 
+        <div className="flex items-center gap-3 my-6">
+          <span className="flex-1 h-px bg-cream-300/60" />
+          <span className="text-[10px] uppercase tracking-[0.18em] text-ink-300">ή</span>
+          <span className="flex-1 h-px bg-cream-300/60" />
+        </div>
+
+        <a
+          href={`${import.meta.env.VITE_API_BASE_URL || ''}/api/auth/oidc/login?app=pwa`}
+          className="ios-tap w-full h-12 rounded-xl bg-white border border-cream-300/60 hover:border-sage-400 text-ink-700 font-medium tracking-wide flex items-center justify-center transition-colors"
+        >
+          Σύνδεση με SSO
+        </a>
+
         <p className="mt-10 text-center text-[10px] uppercase tracking-[0.2em] text-ink-300">
           Pakkoutis Nurseries · Direct Orders
         </p>
