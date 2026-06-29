@@ -11,7 +11,7 @@ import {
   fallbackVariantLabel,
 } from '@/lib/plant-display';
 import { fmtEUR } from '@/lib/format';
-import { DEFAULT_VAT_RATE, VAT_LABEL, type VatRate } from '@/lib/vat';
+import { coerceVatRate, DEFAULT_VAT_RATE, VAT_LABEL, type VatRate } from '@/lib/vat';
 import type { Plant, Variant } from '@/types';
 
 export interface AddLineResult {
@@ -96,7 +96,7 @@ export default function AddLineSheet({
     const seed = customerPrice ?? variant.default_sell_price ?? 0;
     setQty(1);
     setUnitPrice(seed);
-    setVatRate(DEFAULT_VAT_RATE);
+    setVatRate(coerceVatRate(variant.default_vat_rate));
     setInitialPrice(seed);
     setDescription('');
   }, [open, variant, customerPrice]);

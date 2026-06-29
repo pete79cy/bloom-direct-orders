@@ -77,6 +77,8 @@ export interface Variant {
   grade?: string | null;
   /** See Plant.status. */
   status?: CatalogueStatus;
+  /** Plant's saved default VAT %, denormalized from the parent plant by the API. */
+  default_vat_rate?: number;
 }
 
 export interface Supplier {
