@@ -28,8 +28,10 @@ import VatPicker from '@/components/VatPicker';
 import {
   VAT_LABEL,
   vatBreakdown,
+  coerceVatRate,
   type VatRate,
 } from '@/lib/vat';
+import { savePlantVatDefault } from '@/lib/vat-write-back';
 import type { Customer, Plant, Variant, CustomerPrice } from '@/types';
 
 const STEP_LABELS = ['Πελάτης', 'Στοιχεία', 'Γραμμές', 'Έλεγχος'];
@@ -600,6 +602,9 @@ function Step3Lines({
       description: result.description,
     };
     onChange([...lines, next]);
+    if (v.plant_id && result.vat_rate !== coerceVatRate(v.default_vat_rate)) {
+      savePlantVatDefault(v.plant_id, result.vat_rate);
+    }
     setConfiguringVariant(null);
     // Leave the search sheet open with its query — user can keep adding.
   }
@@ -628,6 +633,12 @@ function Step3Lines({
 
   function updateLine(variantId: string, patch: Partial<DraftLine>) {
     onChange(lines.map((l) => (l.variant_id === variantId ? { ...l, ...patch } : l)));
+    if (patch.vat_rate !== undefined) {
+      const v = variants.find((x) => x.id === variantId);
+      if (v?.plant_id) {
+        savePlantVatDefault(v.plant_id, patch.vat_rate);
+      }
+    }
   }
 
   function removeLine(variantId: string) {
