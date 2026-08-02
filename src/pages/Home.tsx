@@ -1,10 +1,14 @@
 import { Link, useNavigate } from 'react-router-dom';
-import { Plus, LogOut, UserPlus } from 'lucide-react';
+import { Bell, Check, LogOut, Plus, UserPlus } from 'lucide-react';
 import { useOrders, useCustomers } from '@/lib/queries';
 import { fmtShortDate, dayKey } from '@/lib/format';
 import { logout, getUser } from '@/lib/auth';
 import StatusBadge from '@/components/StatusBadge';
 import BottomNav from '@/components/BottomNav';
+import { useReminders } from '@/hooks/useReminders';
+import { useDueReminderNotifications } from '@/hooks/useDueReminderNotifications';
+import { dismissReminder, fmtReminderWhen } from '@/lib/reminders';
+import { toast } from 'sonner';
 
 function todayHeader(): { day: string; date: string } {
   const d = new Date();
@@ -18,6 +22,8 @@ export default function Home() {
   const user = getUser();
   const { data: orders = [], isLoading } = useOrders();
   const { data: customers = [] } = useCustomers();
+  const { due: dueReminders } = useReminders();
+  useDueReminderNotifications();
 
   const recent = orders.slice(0, 5);
   const todayISO = new Date().toISOString().slice(0, 10);
@@ -129,6 +135,76 @@ export default function Home() {
           Νέος πελάτης
         </Link>
       </div>
+
+      {/* Due reminders — device-local, set from order detail */}
+      {dueReminders.length > 0 && (
+        <section style={{ padding: '20px 20px 0' }}>
+          <div className="folio" style={{ marginBottom: 10 }}>
+            <span>Υπενθυμίσεις</span>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {dueReminders.map((r) => (
+              <div
+                key={r.id}
+                style={{
+                  background: '#fff',
+                  borderRadius: 14,
+                  boxShadow: 'var(--shadow-card)',
+                  borderLeft: '3px solid var(--clay)',
+                  padding: '12px 14px',
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: 10,
+                }}
+              >
+                <Bell size={16} color="var(--clay)" strokeWidth={1.9} style={{ marginTop: 2, flexShrink: 0 }} />
+                <Link
+                  to={`/orders/${r.orderId}`}
+                  style={{ flex: 1, minWidth: 0, textDecoration: 'none', color: 'inherit' }}
+                >
+                  <p style={{ fontSize: 14, fontWeight: 500, color: 'var(--ink-900)', margin: 0 }}>
+                    {r.customerName || r.orderNumber}
+                  </p>
+                  <p
+                    className="font-mono-meta"
+                    style={{ fontSize: 11, color: 'var(--ink-500)', margin: '3px 0 0' }}
+                  >
+                    {r.orderNumber} · {fmtReminderWhen(r.remindAt)}
+                  </p>
+                  {r.body ? (
+                    <p style={{ fontSize: 13, color: 'var(--ink-700)', margin: '6px 0 0', lineHeight: 1.4 }}>
+                      {r.body}
+                    </p>
+                  ) : null}
+                </Link>
+                <button
+                  type="button"
+                  aria-label="Ολοκλήρωση υπενθύμισης"
+                  className="ios-tap"
+                  onClick={() => {
+                    dismissReminder(r.id);
+                    toast.success('Ολοκληρώθηκε');
+                  }}
+                  style={{
+                    width: 36,
+                    height: 36,
+                    borderRadius: 999,
+                    border: 'none',
+                    background: 'rgba(74, 107, 90, 0.12)',
+                    color: 'var(--sage-800)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flexShrink: 0,
+                  }}
+                >
+                  <Check size={16} strokeWidth={2.4} />
+                </button>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       {/* Recent orders */}
       <section style={{ padding: '28px 20px 0' }}>

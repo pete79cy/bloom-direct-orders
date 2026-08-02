@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Check, Eye, FileText, Minus, Pencil, Plus, Repeat, Send, Trash2, Truck, X } from 'lucide-react';
+import { ArrowLeft, Bell, Check, Eye, FileText, Minus, Pencil, Plus, Repeat, Send, Trash2, Truck, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { useOrder, usePatchOrder, useCreateAmendment, type AmendmentRequest } from '@/lib/queries';
 import { fmtEUR, fmtLongDate } from '@/lib/format';
@@ -10,8 +10,11 @@ import PdfActionSheet from '@/components/PdfActionSheet';
 import OrderTotalPresentView, { type PresentLine } from '@/components/OrderTotalPresentView';
 import OrderSupplierBreakdownView from '@/components/OrderSupplierBreakdownView';
 import NotifyCustomerSheet from '@/components/NotifyCustomerSheet';
+import ReminderSheet from '@/components/ReminderSheet';
 import AddLineSheet, { type AddLineResult } from '@/components/AddLineSheet';
 import VariantPickerSheet from '@/components/VariantPickerSheet';
+import { useReminders } from '@/hooks/useReminders';
+import { dismissReminder, fmtReminderWhen } from '@/lib/reminders';
 import { prettyScientificName, cleanSizeSummary } from '@/lib/plant-display';
 import { vatBreakdown, VAT_LABEL } from '@/lib/vat';
 import { apiFetch } from '@/lib/api';
@@ -107,6 +110,11 @@ export default function OrderDetail() {
   const [addPickedVariant, setAddPickedVariant] = useState<{ variant: Variant; plant: Plant | undefined } | null>(null);
   const [saving, setSaving] = useState(false);
   const [variantPickerOpen, setVariantPickerOpen] = useState(false);
+  const [notesEditing, setNotesEditing] = useState(false);
+  const [notesDraft, setNotesDraft] = useState('');
+  const [notesSaving, setNotesSaving] = useState(false);
+  const [reminderOpen, setReminderOpen] = useState(false);
+  const { reminders } = useReminders();
 
   if (isLoading || !data) {
     return <div className="p-4 text-ink-500">Φόρτωση…</div>;
@@ -155,6 +163,24 @@ export default function OrderDetail() {
   const customerLegal = customer && customer.trading_name && customer.legal_name !== customer.trading_name
     ? customer.legal_name
     : null;
+  const activeReminder = reminders.find((r) => r.orderId === order.id && !r.dismissedAt) ?? null;
+  const reminderIsDue = activeReminder
+    ? new Date(activeReminder.remindAt).getTime() <= Date.now()
+    : false;
+
+  async function saveNotes() {
+    setNotesSaving(true);
+    try {
+      const trimmed = notesDraft.trim();
+      await patch.mutateAsync({ id: order.id, notes: trimmed || null });
+      toast.success(trimmed ? 'Οι σημειώσεις αποθηκεύτηκαν' : 'Οι σημειώσεις διαγράφηκαν');
+      setNotesEditing(false);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Σφάλμα');
+    } finally {
+      setNotesSaving(false);
+    }
+  }
 
   // Live preview of edits — when in edit mode, totals must reflect what
   // the operator is about to submit, not what's still on the server. We
@@ -1077,6 +1103,13 @@ export default function OrderDetail() {
         customerName={customerName}
         customerPhone={customer?.phone}
       />
+      <ReminderSheet
+        open={reminderOpen}
+        onClose={() => setReminderOpen(false)}
+        orderId={order.id}
+        orderNumber={order.order_number}
+        customerName={customerName}
+      />
 
       {/* Variant picker for +Νέα γραμμή. Hands off to AddLineSheet when the
           operator picks one — we don't append directly because the user
@@ -1106,10 +1139,95 @@ export default function OrderDetail() {
         />
       )}
 
-      {/* Notes */}
-      {order.notes && (
-        <section style={{ padding: '20px 20px 0' }}>
-          <div className="folio" style={{ marginBottom: 8 }}><span>Σημειώσεις</span></div>
+      {/* Notes — always available; editable via PATCH /api/orders/:id */}
+      <section style={{ padding: '20px 20px 0' }}>
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            marginBottom: 8,
+          }}
+        >
+          <div className="folio"><span>Σημειώσεις</span></div>
+          {!notesEditing && (
+            <button
+              type="button"
+              className="ios-tap"
+              onClick={() => {
+                setNotesDraft(order.notes ?? '');
+                setNotesEditing(true);
+              }}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 5,
+                height: 30,
+                padding: '0 10px',
+                borderRadius: 999,
+                background: 'rgba(63,75,70,0.06)',
+                color: 'var(--sage-800)',
+                fontSize: 12,
+                fontWeight: 500,
+                border: 'none',
+              }}
+            >
+              <Pencil size={12} strokeWidth={2} />
+              {order.notes ? 'Επεξεργασία' : 'Προσθήκη'}
+            </button>
+          )}
+        </div>
+        {notesEditing ? (
+          <div>
+            <textarea
+              value={notesDraft}
+              onChange={(e) => setNotesDraft(e.target.value)}
+              rows={4}
+              autoFocus
+              placeholder="Σημειώσεις για την παραγγελία…"
+              style={{
+                width: '100%',
+                borderRadius: 12,
+                border: '1px solid rgba(63,75,70,0.14)',
+                background: '#fff',
+                padding: '12px 14px',
+                fontSize: 14,
+                color: 'var(--ink-900)',
+                lineHeight: 1.5,
+                resize: 'vertical',
+              }}
+            />
+            <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+              <button
+                type="button"
+                disabled={notesSaving}
+                onClick={() => setNotesEditing(false)}
+                className="ios-tap"
+                style={{
+                  flex: 1,
+                  height: 44,
+                  borderRadius: 12,
+                  border: '1px solid rgba(63,75,70,0.12)',
+                  background: '#fff',
+                  fontSize: 14,
+                  fontWeight: 500,
+                  color: 'var(--ink-700)',
+                }}
+              >
+                Άκυρο
+              </button>
+              <button
+                type="button"
+                disabled={notesSaving}
+                onClick={() => void saveNotes()}
+                className="btn-primary ios-tap"
+                style={{ flex: 1, height: 44 }}
+              >
+                {notesSaving ? 'Αποθήκευση…' : 'Αποθήκευση'}
+              </button>
+            </div>
+          </div>
+        ) : order.notes ? (
           <p
             style={{
               fontSize: 13,
@@ -1118,12 +1236,124 @@ export default function OrderDetail() {
               padding: '12px 14px',
               background: 'var(--cream-200)',
               borderRadius: 12,
+              whiteSpace: 'pre-wrap',
             }}
           >
             {order.notes}
           </p>
-        </section>
-      )}
+        ) : (
+          <p style={{ fontSize: 13, color: 'var(--ink-500)', margin: 0 }}>
+            Καμία σημείωση ακόμη.
+          </p>
+        )}
+      </section>
+
+      {/* Reminder — device-local; surfaces on Home when due */}
+      <section style={{ padding: '20px 20px 0' }}>
+        <div className="folio" style={{ marginBottom: 8 }}><span>Υπενθύμιση</span></div>
+        {activeReminder ? (
+          <div
+            style={{
+              padding: '14px 14px',
+              borderRadius: 12,
+              background: reminderIsDue ? 'rgba(196, 92, 62, 0.08)' : 'var(--cream-200)',
+              border: reminderIsDue ? '1px solid rgba(196, 92, 62, 0.25)' : '1px solid transparent',
+            }}
+          >
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                marginBottom: activeReminder.body ? 6 : 0,
+              }}
+            >
+              <Bell size={15} color={reminderIsDue ? 'var(--clay)' : 'var(--sage-700)'} strokeWidth={1.9} />
+              <span
+                style={{
+                  fontSize: 13,
+                  fontWeight: 500,
+                  color: reminderIsDue ? 'var(--clay)' : 'var(--ink-900)',
+                }}
+              >
+                {reminderIsDue ? 'Ώρα τώρα · ' : ''}
+                {fmtReminderWhen(activeReminder.remindAt)}
+              </span>
+            </div>
+            {activeReminder.body ? (
+              <p style={{ fontSize: 13, color: 'var(--ink-700)', lineHeight: 1.45, margin: '0 0 10px' }}>
+                {activeReminder.body}
+              </p>
+            ) : (
+              <div style={{ height: 10 }} />
+            )}
+            <div style={{ display: 'flex', gap: 8 }}>
+              {reminderIsDue && (
+                <button
+                  type="button"
+                  className="ios-tap"
+                  onClick={() => {
+                    dismissReminder(activeReminder.id);
+                    toast.success('Η υπενθύμιση ολοκληρώθηκε');
+                  }}
+                  style={{
+                    flex: 1,
+                    height: 40,
+                    borderRadius: 10,
+                    border: 'none',
+                    background: 'var(--sage-700)',
+                    color: '#fff',
+                    fontSize: 13,
+                    fontWeight: 500,
+                  }}
+                >
+                  Έγινε
+                </button>
+              )}
+              <button
+                type="button"
+                className="ios-tap"
+                onClick={() => setReminderOpen(true)}
+                style={{
+                  flex: 1,
+                  height: 40,
+                  borderRadius: 10,
+                  border: '1px solid rgba(63,75,70,0.12)',
+                  background: '#fff',
+                  color: 'var(--ink-700)',
+                  fontSize: 13,
+                  fontWeight: 500,
+                }}
+              >
+                Αλλαγή
+              </button>
+            </div>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setReminderOpen(true)}
+            className="ios-tap"
+            style={{
+              width: '100%',
+              height: 48,
+              borderRadius: 12,
+              border: '1px dashed rgba(63,75,70,0.22)',
+              background: 'transparent',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 8,
+              color: 'var(--sage-800)',
+              fontSize: 14,
+              fontWeight: 500,
+            }}
+          >
+            <Bell size={16} strokeWidth={1.9} />
+            Ορισμός υπενθύμισης
+          </button>
+        )}
+      </section>
 
       {/* Customer notification — only meaningful once the order is READY. */}
       {order.status === 'READY' && (
