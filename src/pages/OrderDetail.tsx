@@ -158,7 +158,12 @@ export default function OrderDetail() {
     }
   }
 
-  const { order, lines, customer } = data;
+  // A REMOVE amendment soft-cancels the line server-side (is_cancelled =
+  // TRUE) and GET /api/orders/:id keeps returning it for the desktop's
+  // strikethrough audit view. On the PWA a removed line is simply gone —
+  // filter once here so the list, totals, PDFs and repeat-order all agree.
+  const activeDetail: OrderDetailT = { ...data, lines: data.lines.filter((l) => !l.is_cancelled) };
+  const { order, lines, customer } = activeDetail;
   const customerName = customer?.trading_name || customer?.legal_name || 'Άγνωστος πελάτης';
   const customerLegal = customer && customer.trading_name && customer.legal_name !== customer.trading_name
     ? customer.legal_name
@@ -450,15 +455,15 @@ export default function OrderDetail() {
             navigate('/orders/new', {
               state: {
                 duplicate: {
-                  customer: data?.customer ?? null,
-                  lines: (data?.lines ?? []).map((l) => ({
+                  customer: customer ?? null,
+                  lines: lines.map((l) => ({
                     variant_id: l.variant_id,
                     qty: l.qty,
                     unit_price: l.unit_price,
                     vat_rate: l.vat_rate ?? 19,
                     description: l.description ?? '',
                   })),
-                  fromOrderNumber: data?.order.order_number,
+                  fromOrderNumber: order.order_number,
                 },
               },
             });
@@ -1072,7 +1077,7 @@ export default function OrderDetail() {
         open={pdfSheetOpen}
         onClose={() => setPdfSheetOpen(false)}
         busy={pdfBusy}
-        onGenerate={(modes) => onGeneratePdf(data, modes)}
+        onGenerate={(modes) => onGeneratePdf(activeDetail, modes)}
       />
 
       <OrderTotalPresentView

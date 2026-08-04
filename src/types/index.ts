@@ -32,6 +32,9 @@ export interface OrderLine {
   unit_price: number;
   discount_pct: number | null;
   vat_rate: number | null;
+  /** REMOVE/SUBSTITUTE amendments soft-cancel lines instead of deleting
+   *  them; the API keeps returning them for the desktop audit view. */
+  is_cancelled?: boolean;
 }
 
 export interface Customer {
