@@ -1,5 +1,5 @@
-import { useEffect } from 'react';
-import { X } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { ChevronDown, X } from 'lucide-react';
 
 /** Single line as shown in the present view. The shape mirrors what
  *  OrderDetail already computes for the inline lines list — we re-use it
@@ -50,6 +50,30 @@ export default function OrderTotalPresentView({
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [open, onClose]);
+
+  // Scroll affordance — on long orders the lines list clips behind the
+  // totals footer with no visual hint, and customers read the visible
+  // lines as the whole order. Track whether unscrolled content remains
+  // and surface a fade + "more products" pill until the list bottoms out.
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [hasMoreBelow, setHasMoreBelow] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    const el = scrollRef.current;
+    if (!el) return;
+    // 8px slack: iOS reports fractional scroll positions near the end.
+    const update = () => {
+      setHasMoreBelow(el.scrollHeight - el.scrollTop - el.clientHeight > 8);
+    };
+    update();
+    el.addEventListener('scroll', update, { passive: true });
+    window.addEventListener('resize', update);
+    return () => {
+      el.removeEventListener('scroll', update);
+      window.removeEventListener('resize', update);
+    };
+  }, [open, lines.length]);
 
   if (!open) return null;
 
@@ -111,7 +135,8 @@ export default function OrderTotalPresentView({
         </div>
       </div>
 
-      <div style={{ flex: 1, overflowY: 'auto', padding: '0 24px' }}>
+      <div style={{ flex: 1, position: 'relative', minWidth: 0, minHeight: 0, display: 'flex' }}>
+        <div ref={scrollRef} data-testid="present-lines-scroll" style={{ flex: 1, overflowY: 'auto', padding: '0 24px' }}>
         {lines.length === 0 ? (
           <div style={{ padding: '24px 0', fontSize: 16, color: 'var(--ink-500)' }}>
             Καμία γραμμή.
@@ -165,6 +190,48 @@ export default function OrderTotalPresentView({
             </div>
           </div>
         ))}
+        </div>
+
+        {hasMoreBelow && (
+          <>
+            {/* Fade hints that lines continue under the totals footer. */}
+            <div
+              aria-hidden="true"
+              style={{
+                position: 'absolute',
+                left: 0, right: 0, bottom: 0,
+                height: 64,
+                pointerEvents: 'none',
+                background: 'linear-gradient(to bottom, rgba(251,247,238,0), var(--cream-100, #FBF7EE))',
+              }}
+            />
+            <button
+              type="button"
+              onClick={() => {
+                const el = scrollRef.current;
+                if (el) el.scrollBy({ top: el.clientHeight * 0.8, behavior: 'smooth' });
+              }}
+              className="ios-tap"
+              style={{
+                position: 'absolute',
+                left: '50%', bottom: 10,
+                transform: 'translateX(-50%)',
+                display: 'inline-flex', alignItems: 'center', gap: 6,
+                height: 34, padding: '0 14px',
+                borderRadius: 999, border: 0,
+                background: 'var(--sage-700, #4E7549)',
+                color: 'var(--cream-50, #FFFDF7)',
+                fontSize: 13, fontWeight: 600,
+                boxShadow: '0 2px 10px rgba(63,75,70,0.25)',
+                cursor: 'pointer',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              <ChevronDown size={15} strokeWidth={2.4} />
+              Κι άλλα προϊόντα
+            </button>
+          </>
+        )}
       </div>
 
       <div
