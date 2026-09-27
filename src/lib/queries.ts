@@ -12,7 +12,10 @@ import type {
   Supplier,
   SupplierProduct,
   SupplierPrice,
+  Quote,
+  QuoteDetail,
 } from '@/types';
+import type { SaveQuotePayload } from './quote';
 
 const TEN_MIN = 10 * 60 * 1000;
 
@@ -360,6 +363,60 @@ export function usePatchOrder() {
     onSuccess: (updated) => {
       qc.invalidateQueries({ queryKey: ['orders'] });
       qc.invalidateQueries({ queryKey: ['order', updated.id] });
+    },
+  });
+}
+
+// ── Quotes (προσφορές) ─────────────────────────────────────────────────────
+// All writes go through bloom-crm's POST /api/quotes/save — the same
+// endpoint as the desktop QuoteBuilder — so pricing write-back, group
+// guards, spec freeze, cost stamping and accept→order all run server side.
+
+export function useQuotes() {
+  return useQuery({
+    queryKey: ['quotes'],
+    queryFn: () => apiFetch<Quote[]>('/api/quotes'),
+  });
+}
+
+export function useQuote(id: string | undefined) {
+  return useQuery({
+    queryKey: ['quote', id],
+    enabled: !!id,
+    queryFn: () => apiFetch<QuoteDetail>(`/api/quotes/${id}`),
+  });
+}
+
+export interface SaveQuoteResponse {
+  ok: true;
+  quoteId: string;
+  quoteNumber: string;
+  orderCreated?: boolean;
+  orderUpdated?: boolean;
+  orderId?: string | null;
+  orderNumber?: string | null;
+}
+
+/** Rejections the UI handles specially. Thrown as ApiError(422) with the
+ *  server body in `payload`; see readQuoteSaveError(). */
+export function useSaveQuote() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: SaveQuotePayload) =>
+      apiFetch<SaveQuoteResponse>('/api/quotes/save', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }),
+    onSuccess: (res) => {
+      void qc.invalidateQueries({ queryKey: ['quotes'] });
+      void qc.invalidateQueries({ queryKey: ['quote', res.quoteId] });
+      // Saving writes the customer's pricelist (and possibly the group's),
+      // and free-text lines may have been auto-matched by learned aliases.
+      void qc.invalidateQueries({ queryKey: ['customer-prices'] });
+      if (res.orderCreated || res.orderUpdated) {
+        void qc.invalidateQueries({ queryKey: ['orders'] });
+        void qc.invalidateQueries({ queryKey: ['deliveries'] });
+      }
     },
   });
 }

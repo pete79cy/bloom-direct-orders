@@ -57,3 +57,21 @@ export function dayKey(value: string | null | undefined): string {
   if (!value) return '';
   return value.slice(0, 10);
 }
+
+/**
+ * Calendar day (YYYY-MM-DD) of a server date value, in the DEVICE's local
+ * time zone. Unlike dayKey() this is correct for node-pg `date` columns that
+ * were JSON-serialised from a local-midnight Date on a UTC+3 server
+ * ("2026-10-26T21:00:00.000Z" → "2026-10-27" on a Cyprus phone). Plain
+ * YYYY-MM-DD input is returned unchanged.
+ */
+export function localDayKey(value: string | null | undefined): string {
+  if (!value) return '';
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return value.slice(0, 10);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}

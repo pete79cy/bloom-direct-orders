@@ -8,6 +8,13 @@ import OrderDetail from './pages/OrderDetail';
 import AddCustomerPage from './pages/AddCustomerPage';
 import Calendar from './pages/Calendar';
 import NewOrderWizard from './pages/NewOrderWizard';
+import { lazy, Suspense } from 'react';
+
+// Quote screens load on first visit — keeps the start-up bundle the size it
+// was before quotes existed (orders remain the hot path at the counter).
+const QuotesList = lazy(() => import('./pages/QuotesList'));
+const QuoteDetail = lazy(() => import('./pages/QuoteDetail'));
+const pageFallback = <p style={{ padding: 24, fontSize: 14, color: 'var(--ink-500)' }}>Φόρτωση…</p>;
 import RequireAuth from './components/RequireAuth';
 import PwaUpdateToast from './components/PwaUpdateToast';
 
@@ -34,9 +41,12 @@ export default function App() {
           <Route path="/" element={<RequireAuth><Home /></RequireAuth>} />
           <Route path="/orders" element={<RequireAuth><OrdersList /></RequireAuth>} />
           <Route path="/customers/new" element={<RequireAuth><AddCustomerPage /></RequireAuth>} />
-          <Route path="/orders/new" element={<RequireAuth><NewOrderWizard /></RequireAuth>} />
+          <Route path="/orders/new" element={<RequireAuth><NewOrderWizard key="order" mode="order" /></RequireAuth>} />
           <Route path="/orders/:id" element={<RequireAuth><OrderDetail /></RequireAuth>} />
           <Route path="/calendar" element={<RequireAuth><Calendar /></RequireAuth>} />
+          <Route path="/quotes" element={<RequireAuth><Suspense fallback={pageFallback}><QuotesList /></Suspense></RequireAuth>} />
+          <Route path="/quotes/new" element={<RequireAuth><NewOrderWizard key="quote" mode="quote" /></RequireAuth>} />
+          <Route path="/quotes/:id" element={<RequireAuth><Suspense fallback={pageFallback}><QuoteDetail /></Suspense></RequireAuth>} />
         </Routes>
       </BrowserRouter>
       <PwaUpdateToast />

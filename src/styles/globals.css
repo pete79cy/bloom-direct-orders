@@ -179,6 +179,14 @@
   .status-delivered { color: var(--st-delivered); background: rgba(47,79,68,0.12); }
   .status-invoiced  { color: #fff;                background: var(--st-invoiced); }
   .status-cancelled { color: var(--st-cancelled); background: rgba(179,85,61,0.10); }
+  /* Quote statuses — same pill, own hues */
+  .status-q-draft      { color: var(--ink-500);      background: rgba(111,122,115,0.10); }
+  .status-q-sent       { color: var(--moss);         background: rgba(92,122,62,0.10); }
+  .status-q-accepted   { color: var(--sage-600);     background: rgba(63,107,92,0.12); }
+  .status-q-converted  { color: #fff;                background: var(--sage-800); }
+  .status-q-rejected   { color: var(--clay);         background: rgba(179,85,61,0.10); }
+  .status-q-expired    { color: var(--honey);        background: rgba(198,142,59,0.12); }
+  .status-q-superseded { color: var(--ink-300);      background: rgba(111,122,115,0.08); }
 
   /* Primary CTA — sage with shadow */
   .btn-primary {
