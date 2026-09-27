@@ -1,54 +1,55 @@
-# Design source — Bloom Orders PWA icon
+# Design source — Bloom app icon
 
 This folder holds the **source artefacts** for the app icon set. The
 rendered PNGs live in `../public/manifest-icons/` (Android / Chromium)
-and `../public/apple-touch-icon.png` (iOS home-screen). Vite-plugin-pwa
-picks them up from there at build time — see `vite.config.ts` →
-`manifest.icons`.
+and `../public/apple-touch-icon.png` (iOS home screen). The browser-tab
+icon is `../public/favicon.svg`. Vite-plugin-pwa picks them up at build
+time — see `vite.config.ts` → `manifest.icons`.
 
 ## Files in this folder
 
 | File | Purpose |
 |---|---|
-| `icon-master.png` | 1024×1024 rendered master. Re-render the icon set from this when you want to change padding / background / format. |
-| `icon-master.html` | HTML/CSS source of the master. Cream `#F2EBDB` background with a faint herbarium dot texture, sage `#6B8E5C` LeafMark scaled from `src/components/LeafMark.tsx`, and "Orders" in Fraunces italic sage-500. Open in a browser at 1024×1024 to verify; export with the browser's screenshot tool or any HTML-to-PNG renderer. |
+| `icon-master.png` | 1024×1024 master from the designer (2026-09-27). A page with a leaf and two text lines over a second page, on cream with a faint dot texture. No wordmark, because the app now covers orders **and** quotes. Every PNG size is rendered from this file. |
+| `icon-mark.svg` | Hand-traced vector of the mark only, without the cream background, on the master's 1024 grid. It is a copy of `public/favicon.svg`. Use it wherever the mark must stay sharp at small sizes. |
 
-## Brand colours used
+## Brand colours (sampled from the master)
 
-- Cream background: `#F2EBDB`
-- Sage leaf fill: `#6B8E5C`
-- Sage-500 (label colour): `#4E7549`
+| Role | Hex |
+|---|---|
+| Cream background, leaf vein, text lines | `#F2EBDB` |
+| Front page | `#2F4F44` (app `--sage-700`) |
+| Back page | `#6B8E5C` |
+| Leaf | `#B4C6A5` |
 
-## How to regenerate the manifest icons from this master
+## Safe zone
 
-The pre-rendered files in `public/manifest-icons/` and
-`public/apple-touch-icon.png` were generated to match the output of
-`pwa-asset-generator` with these specs:
+The mark's bounding box is x 242–780, y 210–786. Its farthest corner is
+405 px from the centre, inside Android's maskable safe radius of 409.6 px
+(40 % of 1024). That is why `icon-maskable.png` is the master itself,
+with no extra padding. If the mark grows, re-check this before reusing
+the master as the maskable icon.
 
-```bash
-# Manifest icons (192 + 512): 20% padding, opaque #f2f2f7 background
-npx pwa-asset-generator design/icon-master.png public/manifest-icons \
-  --padding "20%" --background "#f2f2f7" --opaque --icon-only
+## Regenerating the PNGs
 
-# Maskable: full-bleed cream, leaf in safe zone, no text
-#   (Android masks crop to circle / squircle — text at edges gets clipped)
-npx pwa-asset-generator design/icon-master.png public/manifest-icons \
-  --padding "12%" --maskable --background "#F2EBDB"
-mv public/manifest-icons/maskable-icon-*.png public/manifest-icons/icon-maskable.png
+The master is fully opaque, and iOS requires that for the touch icon.
+Plain Lanczos down-scales are enough:
 
-# Apple touch icon (180×180): 15% padding, opaque #f2f2f7
-npx pwa-asset-generator design/icon-master.png public \
-  --type png --opaque --padding "15%" --background "#f2f2f7" --apple-touch-icon
+```python
+from PIL import Image
+im = Image.open('design/icon-master.png').convert('RGB')
+for path, size in [('public/manifest-icons/icon-512.png', 512),
+                   ('public/manifest-icons/icon-192.png', 192),
+                   ('public/manifest-icons/icon-maskable.png', 512),
+                   ('public/apple-touch-icon.png', 180)]:
+    im.resize((size, size), Image.LANCZOS).save(path, optimize=True)
 ```
 
-After regenerating, rename outputs to match the file names referenced in
-`vite.config.ts` (`icon-192.png`, `icon-512.png`, `icon-maskable.png`,
-`apple-touch-icon.png`) and commit both the master changes here AND the
-public/ outputs together.
+Keep the file names: `vite.config.ts` and `index.html` reference them.
 
-## Provenance
+## Note for users
 
-Imported from a Claude Design handoff bundle on 2026-05-29 — see
-session transcript. The pre-rendered icon set was shipped by the
-designer; this folder preserves the master so future tweaks don't
-require a round-trip through the design tool.
+iOS copies the home-screen icon at the moment the app is added. Anyone
+who installed the PWA earlier keeps the old icon until they delete the
+home-screen shortcut and add it again from Safari (Share → Add to Home
+Screen).
