@@ -1486,8 +1486,11 @@ function Step4Review({
   const [quoteId] = useState(() => makeQuoteId());
   const [quoteSaving, setQuoteSaving] = useState<null | 'DRAFT' | 'SENT'>(null);
   const isQuote = mode === 'quote';
-  // Bloom refuses to send a quote with a matched line priced at 0.
+  // Bloom refuses to send a quote with a matched line priced at 0, and issues
+  // no PDF while a line is unmatched (free-text) — so such quotes are saved
+  // as drafts and finished in Bloom.
   const unpricedCount = lines.filter((l) => !l.draft && !(l.unit_price > 0)).length;
+  const freeTextCount = lines.filter((l) => !!l.draft).length;
 
   async function onSaveQuote(status: 'DRAFT' | 'SENT') {
     setQuoteSaving(status);
@@ -1689,6 +1692,12 @@ function Step4Review({
                 Αποθήκευσέ την ως πρόχειρο ή βάλε τιμή για αποστολή.
               </p>
             )}
+            {freeTextCount > 0 && (
+              <p style={{ fontSize: 12, color: 'var(--clay)', margin: '0 0 8px', textAlign: 'center' }}>
+                {freeTextCount === 1 ? 'Μία γραμμή είναι' : `${freeTextCount} γραμμές είναι`} εκτός καταλόγου.
+                Αποθήκευσέ την ως πρόχειρο και κάνε την αντιστοίχιση στο Bloom για να βγει PDF.
+              </p>
+            )}
             <div style={{ display: 'flex', gap: 8 }}>
               <button
                 type="button"
@@ -1701,7 +1710,7 @@ function Step4Review({
               </button>
               <button
                 type="button"
-                disabled={!!quoteSaving || unpricedCount > 0}
+                disabled={!!quoteSaving || unpricedCount > 0 || freeTextCount > 0}
                 onClick={() => void onSaveQuote('SENT')}
                 className="btn-primary ios-tap"
                 style={{ flex: 1.4 }}

@@ -250,7 +250,8 @@ export interface QuoteStatusHistoryRow {
 export interface QuoteDetail {
   quote: Quote;
   lines: QuoteLine[];
-  customer: (Customer & { phone?: string; email?: string }) | null;
+  /** `language` ('EL' | 'EN' | …) picks the default PDF language, as on desktop. */
+  customer: (Customer & { phone?: string; email?: string; language?: string }) | null;
   statusHistory: QuoteStatusHistoryRow[];
   linkedOrder: { id: string; order_number: string; status: OrderStatus } | null;
   /** False when the desktop has created a newer revision — read-only here. */

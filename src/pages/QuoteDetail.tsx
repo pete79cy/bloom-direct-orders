@@ -5,6 +5,7 @@ import {
   ArrowLeft, Check, Copy, FileText, Pencil, Send, ShoppingCart, X, CalendarClock, AlertTriangle,
 } from 'lucide-react';
 import { useQuote } from '@/lib/queries';
+import { apiFetchBlob } from '@/lib/api';
 import { useQuoteSaver } from '@/hooks/useQuoteSaver';
 import { MobileSheet } from '@/components/MobileSheet';
 import QuoteStatusBadge from '@/components/QuoteStatusBadge';
@@ -16,7 +17,8 @@ import { cleanSizeSummary, prettyScientificName } from '@/lib/plant-display';
 import { VAT_LABEL, coerceVatRate } from '@/lib/vat';
 import {
   LOCKED_QUOTE_STATUSES, QUOTE_STATUS_LABEL, buildQuoteUpdatePayload, canTransition,
-  displayQuoteStatus, isQuoteExpired, mainLines, quoteLineNet, quoteTotals, unmatchedLines,
+  defaultQuotePdfLanguage, displayQuoteStatus, isQuoteExpired, mainLines, quoteLineNet,
+  quotePdfPath, quoteTotals, unmatchedLines,
 } from '@/lib/quote';
 import type { DuplicateSeed } from '@/pages/NewOrderWizard';
 import type { Quote, QuoteDetail as QuoteDetailData, QuoteLine } from '@/types';
@@ -142,14 +144,14 @@ export default function QuoteDetail() {
   async function onPdf() {
     setPdfBusy(true);
     try {
-      const [{ generateQuotePdf }, { shareOrDownloadPdf }] = await Promise.all([
-        import('@/lib/pdf-quote'),
+      // Bloom's own PDF (desktop generator, rendered by bloom-crm).
+      const [blob, { shareOrDownloadPdf }] = await Promise.all([
+        apiFetchBlob(quotePdfPath(quote.id, defaultQuotePdfLanguage(customer?.language))),
         import('@/lib/pdf-sales-doc'),
       ]);
-      const blob = await generateQuotePdf(detail);
       await shareOrDownloadPdf(blob, `${quote.quote_number}.pdf`, `Προσφορά ${quote.quote_number}`);
-    } catch {
-      toast.error('Αποτυχία δημιουργίας PDF');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Αποτυχία δημιουργίας PDF');
     } finally {
       setPdfBusy(false);
     }
@@ -247,7 +249,7 @@ export default function QuoteDetail() {
         {unmatched.length > 0 && !linkedOrder && (
           <Banner tone="warn">
             {unmatched.length === 1 ? 'Μία γραμμή δεν έχει' : `${unmatched.length} γραμμές δεν έχουν`} αντιστοιχιστεί
-            σε φυτό του καταλόγου. Η αντιστοίχιση γίνεται από το Bloom.
+            σε φυτό του καταλόγου. Η αντιστοίχιση γίνεται από το Bloom, και μέχρι τότε δεν βγαίνει PDF.
           </Banner>
         )}
 
@@ -317,7 +319,7 @@ export default function QuoteDetail() {
 
         {/* Secondary actions */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-          <ActionButton icon={<FileText size={16} />} label={pdfBusy ? 'PDF…' : 'PDF'} onClick={() => void onPdf()} disabled={pdfBusy} />
+          <ActionButton icon={<FileText size={16} />} label={pdfBusy ? 'PDF…' : 'PDF'} onClick={() => void onPdf()} disabled={pdfBusy || unmatched.length > 0} />
           {quote.status === 'SENT' && isLatestRevision && (
             <ActionButton icon={<Send size={16} />} label="Ξαναστείλε" onClick={() => setSendOpen(true)} />
           )}

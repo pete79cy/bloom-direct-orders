@@ -161,3 +161,16 @@ describe('compareQuotesNewestFirst', () => {
     expect(nums).toEqual(['QT-2026-1000', 'QT-2026-010', 'QT-2026-009', 'QT-2025-120', 'weird']);
   });
 });
+
+import { defaultQuotePdfLanguage, quotePdfPath } from './quote';
+describe('Bloom quote PDF', () => {
+  it('defaults to Greek only for Greek customers', () => {
+    expect(defaultQuotePdfLanguage('EL')).toBe('EL');
+    expect(defaultQuotePdfLanguage('EN')).toBe('EN');
+    expect(defaultQuotePdfLanguage(undefined)).toBe('EN');
+  });
+  it('builds the endpoint path', () => {
+    expect(quotePdfPath('q 1', 'EL')).toBe('/api/quotes/q%201/pdf?lang=EL&terms=1');
+    expect(quotePdfPath('q', 'EN', false)).toBe('/api/quotes/q/pdf?lang=EN&terms=0');
+  });
+});

@@ -294,3 +294,18 @@ export function compareQuotesNewestFirst(a: Pick<Quote, 'quote_number'>, b: Pick
   const [yb, nb] = quoteNumberKey(b.quote_number);
   return yb - ya || nb - na;
 }
+
+export type QuotePdfLanguage = 'EL' | 'EN';
+
+/** Bloom's own default: Greek customers get the Greek PDF. */
+export function defaultQuotePdfLanguage(customerLanguage: string | null | undefined): QuotePdfLanguage {
+  return customerLanguage === 'EL' ? 'EL' : 'EN';
+}
+
+/** Path of the PDF Bloom issues for a quote — the desktop QuoteBuilder's
+ *  generator, rendered by bloom-crm. 409 PENDING_MATCHING while any line is
+ *  still unmatched (same rule as the desktop). */
+export function quotePdfPath(quoteId: string, lang: QuotePdfLanguage, includeTerms = true): string {
+  const q = new URLSearchParams({ lang, terms: includeTerms ? '1' : '0' });
+  return `/api/quotes/${encodeURIComponent(quoteId)}/pdf?${q.toString()}`;
+}
