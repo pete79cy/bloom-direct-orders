@@ -2,9 +2,12 @@ import { useState } from 'react';
 import { toast } from 'sonner';
 import { Download, Mail, Share2 } from 'lucide-react';
 import { MobileSheet } from './MobileSheet';
-import { apiFetch, ApiError } from '@/lib/api';
+import { apiFetch, apiFetchBlob, ApiError } from '@/lib/api';
 import { fmtEUR, fmtLongDate } from '@/lib/format';
-import { buildQuoteMessage, quoteTotals } from '@/lib/quote';
+import {
+  buildQuoteMessage, defaultQuotePdfLanguage, quotePdfPath, quoteTotals, unmatchedLines,
+  type QuotePdfLanguage,
+} from '@/lib/quote';
 import type { QuoteDetail } from '@/types';
 
 interface Props {
@@ -19,9 +22,11 @@ interface Props {
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 /**
- * Send a quote to the customer. The quote is moved to SENT first (so Bloom
- * runs its send-time rules: unpriced check, group prices, spec freeze, cost
- * stamp), then the PDF goes out through one of:
+ * Send a quote to the customer. The PDF is Bloom's own — rendered by
+ * bloom-crm with the desktop QuoteBuilder generator (GET /api/quotes/:id/pdf).
+ * The quote is moved to SENT first (so Bloom runs its send-time rules:
+ * unpriced check, group prices, spec freeze, cost stamp), then the PDF goes
+ * out through one of:
  *  - the native share sheet (Viber / WhatsApp / Mail… with the PDF attached),
  *  - a Gmail draft created by Bloom (POST /api/quotes/:id/send-gmail),
  *  - a plain download.
@@ -35,6 +40,10 @@ export default function SendQuoteSheet({ open, onClose, detail, ensureSent }: Pr
   // iOS only allows navigator.share() close to a tap. If the save + PDF took
   // too long the first attempt is refused; keep the file for a second tap.
   const [pendingShare, setPendingShare] = useState<File | null>(null);
+  const [lang, setLang] = useState<QuotePdfLanguage>(defaultQuotePdfLanguage(customer?.language));
+  // Bloom refuses the PDF while a line is unmatched (desktop rule), so say it
+  // up front instead of marking the quote SENT and then failing.
+  const unmatched = unmatchedLines(detail.lines).length;
 
   // Re-seed the editable fields each time the sheet opens (React's
   // "adjust state when a prop changes" pattern — no effect needed).
@@ -50,16 +59,16 @@ export default function SendQuoteSheet({ open, onClose, detail, ensureSent }: Pr
       }));
       setEmail(customer?.email || '');
       setPendingShare(null);
+      setLang(defaultQuotePdfLanguage(customer?.language));
     }
   }
 
   const filename = `${quote.quote_number}.pdf`;
 
-  async function buildPdf(): Promise<Blob> {
-    const { generateQuotePdf } = await import('@/lib/pdf-quote');
-    // The PDF reflects the state the customer receives: SENT.
-    const status = quote.status === 'DRAFT' ? 'SENT' : quote.status;
-    return generateQuotePdf({ ...detail, quote: { ...detail.quote, status } });
+  /** Fetched AFTER ensureSent, so Bloom renders the quote as the customer
+   *  receives it (SENT, spec frozen). */
+  function buildPdf(): Promise<Blob> {
+    return apiFetchBlob(quotePdfPath(quote.id, lang));
   }
 
   async function share(file: File): Promise<void> {
@@ -150,8 +159,8 @@ export default function SendQuoteSheet({ open, onClose, detail, ensureSent }: Pr
       const blob = await buildPdf();
       const { downloadPdf } = await import('@/lib/pdf-sales-doc');
       downloadPdf(blob, filename);
-    } catch {
-      toast.error('Αποτυχία δημιουργίας PDF');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Αποτυχία δημιουργίας PDF');
     } finally {
       setBusy(null);
     }
@@ -166,15 +175,44 @@ export default function SendQuoteSheet({ open, onClose, detail, ensureSent }: Pr
   }
 
   const willSend = quote.status === 'DRAFT' || quote.status === 'EXPIRED';
+  const blocked = unmatched > 0;
 
   return (
     <MobileSheet open={open} onClose={onClose} title="Αποστολή προσφοράς">
       <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
         <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '4px 16px 12px', display: 'flex', flexDirection: 'column', gap: 14 }}>
-          <p style={{ fontSize: 13, color: 'var(--ink-500)', lineHeight: 1.45, margin: 0 }}>
-            {willSend ? 'Η προσφορά θα σημειωθεί ως «Εστάλη» στο Bloom πριν φύγει το PDF. ' : ''}
-            Η κοινοποίηση ανοίγει Viber, WhatsApp ή Mail με το PDF συνημμένο.
-          </p>
+          {blocked ? (
+            <p style={{ fontSize: 13, color: '#7a5621', background: 'rgba(198,142,59,0.12)', borderRadius: 12, padding: '10px 12px', lineHeight: 1.45, margin: 0 }}>
+              {unmatched === 1 ? 'Μία γραμμή δεν έχει' : `${unmatched} γραμμές δεν έχουν`} αντιστοιχιστεί σε φυτό
+              του καταλόγου. Το Bloom βγάζει PDF μόνο όταν όλες οι γραμμές έχουν αντιστοίχιση.
+              Κάνε την αντιστοίχιση στο Bloom και ξαναδοκίμασε.
+            </p>
+          ) : (
+            <p style={{ fontSize: 13, color: 'var(--ink-500)', lineHeight: 1.45, margin: 0 }}>
+              {willSend ? 'Η προσφορά θα σημειωθεί ως «Εστάλη» στο Bloom πριν φύγει το PDF. ' : ''}
+              Το PDF είναι αυτό που εκδίδει το Bloom. Η κοινοποίηση ανοίγει Viber, WhatsApp ή Mail με το PDF συνημμένο.
+            </p>
+          )}
+          <div>
+            <span className="text-eyebrow" style={{ display: 'block', marginBottom: 6, color: 'var(--ink-500)' }}>
+              Γλώσσα PDF
+            </span>
+            <div role="radiogroup" aria-label="Γλώσσα PDF" style={{ display: 'flex', gap: 8 }}>
+              {(['EL', 'EN'] as const).map((l) => (
+                <button
+                  key={l}
+                  type="button"
+                  role="radio"
+                  aria-checked={lang === l}
+                  onClick={() => setLang(l)}
+                  className={`chip ${lang === l ? 'chip-active' : ''}`}
+                  style={{ minHeight: 36, padding: '0 14px', fontSize: 13 }}
+                >
+                  {l === 'EL' ? 'Ελληνικά' : 'English'}
+                </button>
+              ))}
+            </div>
+          </div>
           <div>
             <label htmlFor="send-quote-message" className="text-eyebrow" style={{ display: 'block', marginBottom: 6, color: 'var(--ink-500)' }}>
               Μήνυμα
@@ -225,16 +263,16 @@ export default function SendQuoteSheet({ open, onClose, detail, ensureSent }: Pr
               <Share2 size={18} /> Άνοιγμα κοινοποίησης
             </button>
           ) : (
-            <button type="button" className="btn-primary ios-tap" disabled={!!busy} onClick={() => void onShare()}>
+            <button type="button" className="btn-primary ios-tap" disabled={!!busy || blocked} onClick={() => void onShare()}>
               <Share2 size={18} />
               {busy === 'share' ? 'Ετοιμασία…' : 'Κοινοποίηση PDF'}
             </button>
           )}
           <div style={{ display: 'flex', gap: 8 }}>
-            <button type="button" className="btn-secondary ios-tap" disabled={!!busy} onClick={() => void onGmail()}>
+            <button type="button" className="btn-secondary ios-tap" disabled={!!busy || blocked} onClick={() => void onGmail()}>
               <Mail size={17} /> {busy === 'gmail' ? 'Gmail…' : 'Πρόχειρο Gmail'}
             </button>
-            <button type="button" className="btn-secondary ios-tap" disabled={!!busy} onClick={() => void onDownload()}>
+            <button type="button" className="btn-secondary ios-tap" disabled={!!busy || blocked} onClick={() => void onDownload()}>
               <Download size={17} /> {busy === 'download' ? 'PDF…' : 'Λήψη PDF'}
             </button>
           </div>

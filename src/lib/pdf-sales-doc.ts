@@ -1,7 +1,8 @@
 /**
- * Sales-document PDF renderer — client-side jsPDF, shared by the order PDF
- * (pdf-order.ts) and the quote PDF (pdf-quote.ts). Callers map their domain
- * object onto SalesDocModel; this module owns layout only.
+ * Sales-document PDF renderer — client-side jsPDF, used by the order PDF
+ * (pdf-order.ts). Quotes do NOT use it: their PDF is Bloom's own, rendered by
+ * bloom-crm's GET /api/quotes/:id/pdf with the desktop generator. This module
+ * owns layout only; callers map their domain object onto SalesDocModel.
  *
  * Design language follows the rest of the app: sage + cream, refined
  * hierarchy, hairline rules, plenty of whitespace, restrained color.

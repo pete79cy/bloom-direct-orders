@@ -708,8 +708,13 @@ guards, spec freeze, cost stamping and accept→order on that path.
   `offered_variant_id`.
 - Free-text quote lines stay unmatched (`offered_variant_id = null`). They are
   not turned into draft catalogue rows the way direct-order lines are.
-- The PDF renderer is shared: `pdf-sales-doc.ts` renders, `pdf-order.ts` and
-  `pdf-quote.ts` map.
+- **The quote PDF is Bloom's own.** bloom-crm renders it with the desktop
+  QuoteBuilder generator at `GET /api/quotes/:id/pdf?lang=EL|EN` and the PWA
+  only downloads it (`apiFetchBlob` + `quotePdfPath`). Never build a quote PDF
+  on the client. Bloom returns 409 `PENDING_MATCHING` while any line is
+  unmatched, so quotes with free-text lines are saved as drafts and finished
+  in Bloom.
+- `pdf-sales-doc.ts` renders the order PDF only (`pdf-order.ts` maps).
 
 ## 21. Glossary
 

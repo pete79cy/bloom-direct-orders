@@ -82,8 +82,14 @@ status στο Bloom (το Bloom δεν έχει job που να το κάνει)
 
 **Αποστολή:** πρώτα save σε SENT, μετά PDF. Κοινοποίηση μέσω share sheet
 (Viber, WhatsApp, Mail με συνημμένο), πρόχειρο Gmail μέσω Bloom, ή λήψη.
+Επιλογή γλώσσας ΕΛ/EN, με προεπιλογή τη γλώσσα του πελάτη.
 
-**PDF:** κοινός renderer `pdf-sales-doc.ts` για παραγγελία και προσφορά.
+**PDF:** το πρωτότυπο PDF του Bloom. Το bloom-crm τρέχει τον ίδιο generator με
+το desktop (`src/lib/pdf-utils.ts → generateQuotePDF`) στον server, στο
+`GET /api/quotes/:id/pdf`, και το app απλώς το κατεβάζει. Όπως στο desktop,
+δεν βγαίνει PDF όσο κάποια γραμμή είναι χωρίς αντιστοίχιση. Γι' αυτό μια
+προσφορά με γραμμές εκτός καταλόγου αποθηκεύεται ως πρόχειρο και ολοκληρώνεται
+στο Bloom.
 
 ## Εκτός scope (μένουν στο desktop)
 

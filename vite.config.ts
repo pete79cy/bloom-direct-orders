@@ -36,8 +36,9 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.svg', 'apple-touch-icon.png'],
       manifest: {
-        name: 'Bloom Orders',
-        short_name: 'Orders',
+        name: 'Bloom Sales Force',
+        // Home-screen label; the full name would be truncated on iOS/Android.
+        short_name: 'Bloom Sales',
         description: 'Καταχώρηση και διαχείριση παραγγελιών — Pakkoutis Nurseries',
         theme_color: '#34c759',
         background_color: '#f2f2f7',

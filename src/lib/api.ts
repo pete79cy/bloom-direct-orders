@@ -68,3 +68,27 @@ function safeJson(text: string): unknown {
     return text;
   }
 }
+
+/**
+ * Binary GET with the same auth / 401 / error handling as apiFetch — used
+ * for PDFs rendered by bloom-crm (e.g. GET /api/quotes/:id/pdf). Non-2xx
+ * JSON bodies surface as ApiError with the server's message.
+ */
+export async function apiFetchBlob(path: string): Promise<Blob> {
+  const token = readToken();
+  const headers = new Headers({ Accept: 'application/pdf, application/json' });
+  if (token) headers.set('Authorization', `Bearer ${token}`);
+  const res = await fetch(`${BASE_URL}${path}`, { cache: 'no-store', headers });
+  if (res.status === 401) {
+    unauthorizedHandler?.();
+    throw new ApiError(401, 'Unauthorized', null);
+  }
+  if (!res.ok) {
+    const text = await res.text();
+    const payload = text ? safeJson(text) : null;
+    const body = (payload && typeof payload === 'object' ? payload : {}) as Record<string, unknown>;
+    const message = String(body.message ?? body.error ?? '') || res.statusText;
+    throw new ApiError(res.status, message, payload);
+  }
+  return res.blob();
+}
