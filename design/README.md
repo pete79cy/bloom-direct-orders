@@ -38,14 +38,20 @@ Plain Lanczos down-scales are enough:
 ```python
 from PIL import Image
 im = Image.open('design/icon-master.png').convert('RGB')
-for path, size in [('public/manifest-icons/icon-512.png', 512),
-                   ('public/manifest-icons/icon-192.png', 192),
-                   ('public/manifest-icons/icon-maskable.png', 512),
+for path, size in [('public/manifest-icons/icon-512-v2.png', 512),
+                   ('public/manifest-icons/icon-192-v2.png', 192),
+                   ('public/manifest-icons/icon-maskable-v2.png', 512),
+                   ('public/apple-touch-icon-v2.png', 180),
                    ('public/apple-touch-icon.png', 180)]:
     im.resize((size, size), Image.LANCZOS).save(path, optimize=True)
 ```
 
-Keep the file names: `vite.config.ts` and `index.html` reference them.
+**File names are versioned (`-v2`) on purpose.** iOS and the service worker
+cache icons by URL, so re-using a name ships the old picture. When the
+artwork changes, render to `-v3` names and update `index.html`
+(`apple-touch-icon` link) and `vite.config.ts` (`manifest.icons`,
+`includeAssets`). `public/apple-touch-icon.png` stays as the unversioned
+fallback that iOS probes when a page declares no icon.
 
 ## Note for users
 
