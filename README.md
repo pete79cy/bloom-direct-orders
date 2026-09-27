@@ -1,6 +1,6 @@
 # Bloom Direct Orders
 
-Mobile-first PWA for capturing direct customer orders at Pakkoutis Nurseries. Backed by the existing bloom-crm Postgres tables via the existing API.
+Mobile-first PWA for capturing direct customer orders and quotes at Pakkoutis Nurseries. Backed by the existing bloom-crm Postgres tables via the existing API.
 
 Production: https://orders.smartquotations.eu
 
@@ -95,7 +95,10 @@ State management: TanStack Query for server state, local component state for UI.
 
 Pages:
 - `/login` — email/password + "Να με θυμάσαι"
-- `/` — Home with new-order CTA + recent orders
+- `/` — Home split in two: «Νέα Προσφορά» above, «Νέα Παραγγελία» below, then recent orders and quotes
+- `/quotes` — quotes list with status filters
+- `/quotes/new` — the same 4-step wizard in quote mode
+- `/quotes/:id` — send (share sheet / Gmail draft), accept (Bloom creates the order), reject, extend validity
 - `/orders` — list with status filter + search
 - `/orders/new` — 4-step wizard (customer, details, lines, review)
 - `/orders/:id` — detail + status transitions

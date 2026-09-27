@@ -28,6 +28,8 @@ export interface AddLineResult {
 
 interface Props {
   open: boolean;
+  /** Commit button text; the quote wizard passes «Προσθήκη στην προσφορά». */
+  addLabel?: string;
   variant: Variant | null;
   plant: Plant | undefined;
   supplier?: string | null;
@@ -75,6 +77,7 @@ interface Props {
  */
 export default function AddLineSheet({
   open,
+  addLabel = 'Προσθήκη στην παραγγελία',
   variant,
   plant,
   supplier,
@@ -374,7 +377,7 @@ export default function AddLineSheet({
           className="btn-primary ios-tap"
         >
           <Plus size={18} color="var(--cream-50)" strokeWidth={2} />
-          Προσθήκη στην παραγγελία
+          {addLabel}
           <Check size={0} aria-hidden="true" />
         </button>
       </div>

@@ -159,3 +159,100 @@ export interface LoginResponse {
   token: string;
   user: AuthUser;
 }
+
+// ── Quotes (προσφορές) ─────────────────────────────────────────────────────
+// Mirrors bloom-crm's `quotes` / `quote_lines` tables. The PWA writes quotes
+// through the SAME endpoint the desktop uses (POST /api/quotes/save), so all
+// Bloom rules apply: spec freeze on send, unpriced / group-price guards,
+// customer + group pricelist write-back, own-cost stamping, accept → order.
+// Column-name gotchas vs orders: unit_sell_price (not unit_price),
+// description_override (not description), offered_variant_id (not variant_id).
+
+export type QuoteStatus =
+  | 'DRAFT'
+  | 'SENT'
+  | 'ACCEPTED'
+  | 'REJECTED'
+  | 'EXPIRED'
+  | 'CONVERTED'
+  | 'SUPERSEDED';
+
+export interface Quote {
+  id: string;
+  quote_number: string;
+  customer_id: string;
+  status: QuoteStatus;
+  currency: string;
+  /** YYYY-MM-DD from GET /api/quotes/:id; a full ISO timestamp from the list
+   *  endpoint (node-pg Date). Always read through localDayKey(). */
+  issue_date: string;
+  valid_until: string;
+  notes: string;
+  terms: string;
+  revision_of_quote_id: string | null;
+  revision_no: number;
+  created_at: string;
+  updated_at: string;
+  archived_at?: string | null;
+  // List-endpoint aggregates.
+  lines_count?: number;
+  total_value?: number;
+  needs_matching?: boolean;
+  linked_order_id?: string | null;
+}
+
+/** Read-only display block added by GET /api/quotes/:id. Never persisted —
+ *  the server ignores it when the line is round-tripped into a save. */
+export interface QuoteLineDisplay {
+  plant_common_name: string | null;
+  plant_scientific_name: string | null;
+  /** Set only on unmatched (free-text) lines. */
+  free_text: string | null;
+  size_summary: string | null;
+  variant_code: string | null;
+  variant_status: CatalogueStatus | null;
+  plant_status: CatalogueStatus | null;
+}
+
+export type PriceScope = 'group' | 'customer' | 'quote';
+
+/** A quote_lines row. The server returns ~50 columns (overrides, sourcing,
+ *  audit); the PWA types only what it reads and round-trips the rest
+ *  verbatim, so the index signature keeps them on the object. */
+export interface QuoteLine {
+  id: string;
+  quote_id: string;
+  line_no: number;
+  offered_variant_id: string | null;
+  is_alternative?: boolean;
+  qty: number;
+  unit_sell_price: number;
+  discount_pct: number;
+  vat_rate: number;
+  description_override: string;
+  offered_common_name_override?: string;
+  requested_spec_text?: string;
+  price_scope?: PriceScope | null;
+  display?: QuoteLineDisplay;
+  [column: string]: unknown;
+}
+
+export interface QuoteStatusHistoryRow {
+  id: string;
+  quote_id: string;
+  from_status: QuoteStatus | null;
+  to_status: QuoteStatus;
+  changed_at: string;
+  changed_by: string;
+  action: string;
+}
+
+export interface QuoteDetail {
+  quote: Quote;
+  lines: QuoteLine[];
+  customer: (Customer & { phone?: string; email?: string }) | null;
+  statusHistory: QuoteStatusHistoryRow[];
+  linkedOrder: { id: string; order_number: string; status: OrderStatus } | null;
+  /** False when the desktop has created a newer revision — read-only here. */
+  isLatestRevision: boolean;
+}

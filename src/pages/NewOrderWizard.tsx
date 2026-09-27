@@ -3,7 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { useQueryClient } from '@tanstack/react-query';
 import {
-  ArrowLeft, Search, Plus, Trash2, Tag, FileText, Edit3,
+  ArrowLeft, Search, Plus, Trash2, Tag, FileText, Edit3, Send,
 } from 'lucide-react';
 import MobileStepper from '@/components/MobileStepper';
 import FullScreenSheet from '@/components/FullScreenSheet';
@@ -17,6 +17,10 @@ import {
   useCustomers, usePlants, useVariants, useCustomerPrices, useCreateDirectOrder,
   useSuppliers, useSupplierProducts, useSupplierPrices,
 } from '@/lib/queries';
+import { useQuoteSaver } from '@/hooks/useQuoteSaver';
+import {
+  buildNewQuotePayload, makeQuoteId, loadLastTerms, saveLastTerms, DEFAULT_VALIDITY_DAYS,
+} from '@/lib/quote';
 import { buildCostMap, marginPct } from '@/lib/supplier-cost';
 import PriceInput from '@/components/PriceInput';
 import { fmtEUR, fmtLongDate, isoToday, addDays } from '@/lib/format';
@@ -43,10 +47,15 @@ import type { DraftLine, PriceSource } from '@/lib/draft-line';
 import { draftLineToPayload, makeLocalDraftId } from '@/lib/draft-line';
 import FreeTextLineSheet, { type FreeTextLineResult } from '@/components/FreeTextLineSheet';
 
+/** 'order' creates a direct order (POST /api/direct-orders); 'quote'
+ *  creates a Bloom quote (POST /api/quotes/save). Steps 1 and 3 (customer,
+ *  lines) are shared verbatim; step 2 and the review CTA differ. */
+export type WizardMode = 'order' | 'quote';
+
 /** Shape of location.state.duplicate passed by the OrderDetail "Επανάληψη"
- *  button. Used to seed a fresh wizard draft from an existing order without
- *  refetching anything from the server. */
-interface DuplicateSeed {
+ *  button (and QuoteDetail "Αντίγραφο ως νέα"). Used to seed a fresh wizard
+ *  draft from an existing order/quote without refetching anything. */
+export interface DuplicateSeed {
   customer: Customer | null;
   lines: Array<{
     variant_id: string;
@@ -54,14 +63,18 @@ interface DuplicateSeed {
     unit_price: number;
     vat_rate: number;
     description: string;
+    /** Free-text (unmatched) quote line — becomes a free-text cart line. */
+    draft?: { name: string; size: string };
   }>;
   fromOrderNumber?: string;
+  fromQuoteNumber?: string;
 }
 
-export default function NewOrderWizard() {
+export default function NewOrderWizard({ mode = 'order' }: { mode?: WizardMode }) {
   const navigate = useNavigate();
   const location = useLocation();
   const [step, setStep] = useState(0);
+  const isQuote = mode === 'quote';
 
   // If we arrived via "Επανάληψη παραγγελίας", seed the initial state from
   // location.state.duplicate so the wizard opens with customer + lines
@@ -76,9 +89,14 @@ export default function NewOrderWizard() {
   const [customer, setCustomer] = useState<Customer | null>(duplicate?.customer ?? presetCustomer ?? null);
   const [deliveryDate, setDeliveryDate] = useState(addDays(isoToday(), 3));
   const [notes, setNotes] = useState('');
+  // Quote-only header fields.
+  const [issueDate, setIssueDate] = useState(isoToday());
+  const [validUntil, setValidUntil] = useState(addDays(isoToday(), DEFAULT_VALIDITY_DAYS));
+  const [terms, setTerms] = useState(() => (isQuote ? loadLastTerms() : ''));
   const [lines, setLines] = useState<DraftLine[]>(() =>
-    (duplicate?.lines ?? []).map((l) => ({
-      variant_id: l.variant_id,
+    (duplicate?.lines ?? []).map((l, i) => ({
+      ...(l.draft ? { draft: l.draft } : {}),
+      variant_id: l.draft ? makeLocalDraftId(i) : l.variant_id,
       qty: l.qty,
       unit_price: l.unit_price,
       // We can't reliably reclassify the price source on duplicate (the
@@ -128,9 +146,10 @@ export default function NewOrderWizard() {
     if (duplicate) {
       setStep(1);
       const n = duplicate.lines.length;
+      const from = duplicate.fromQuoteNumber ?? duplicate.fromOrderNumber;
       toast.success(
-        duplicate.fromOrderNumber
-          ? `Επανάληψη ${duplicate.fromOrderNumber} · ${n} γραμμές`
+        from
+          ? `${isQuote ? 'Αντίγραφο' : 'Επανάληψη'} ${from} · ${n} γραμμές`
           : `Επανάληψη παραγγελίας · ${n} γραμμές`,
         { description: 'Έλεγξε τις τιμές πριν την αποθήκευση.' },
       );
@@ -142,7 +161,7 @@ export default function NewOrderWizard() {
       // Preselected customer from AddCustomerPage — jump to Step 2 with an
       // empty cart and no "Επανάληψη" banner.
       setStep(1);
-      toast.success(`Νέα παραγγελία · ${presetCustomer.trading_name || presetCustomer.legal_name}`);
+      toast.success(`${isQuote ? 'Νέα προσφορά' : 'Νέα παραγγελία'} · ${presetCustomer.trading_name || presetCustomer.legal_name}`);
       navigate(location.pathname, { replace: true, state: {} });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -186,7 +205,7 @@ export default function NewOrderWizard() {
         >
           <ArrowLeft className="w-5 h-5" />
         </button>
-        <h1 className="text-lg font-semibold">Νέα παραγγελία</h1>
+        <h1 className="text-lg font-semibold">{isQuote ? 'Νέα προσφορά' : 'Νέα παραγγελία'}</h1>
       </header>
 
       <MobileStepper steps={STEP_LABELS} current={step} />
@@ -202,7 +221,22 @@ export default function NewOrderWizard() {
         />
       )}
 
-      {step === 1 && (
+      {step === 1 && isQuote && (
+        <Step2QuoteDetails
+          issueDate={issueDate}
+          validUntil={validUntil}
+          notes={notes}
+          terms={terms}
+          onIssueDateChange={setIssueDate}
+          onValidUntilChange={setValidUntil}
+          onNotesChange={setNotes}
+          onTermsChange={setTerms}
+          canContinue={!!issueDate && !!validUntil && validUntil >= issueDate}
+          onContinue={() => setStep(2)}
+        />
+      )}
+
+      {step === 1 && !isQuote && (
         <Step2Details
           deliveryDate={deliveryDate}
           notes={notes}
@@ -224,13 +258,18 @@ export default function NewOrderWizard() {
           lines={lines}
           onChange={setLines}
           onContinue={() => setStep(3)}
+          mode={mode}
         />
       )}
 
       {step === 3 && (
         <Step4Review
+          mode={mode}
           customer={customer!}
           deliveryDate={deliveryDate}
+          issueDate={issueDate}
+          validUntil={validUntil}
+          terms={terms}
           notes={notes}
           lines={lines}
           variants={variants}
@@ -462,6 +501,114 @@ function Step2Details({
   );
 }
 
+/* ---------- Step 2 (quote) — Issue date, validity, terms ---------- */
+
+interface Step2QuoteProps {
+  issueDate: string;
+  validUntil: string;
+  notes: string;
+  terms: string;
+  canContinue: boolean;
+  onIssueDateChange: (v: string) => void;
+  onValidUntilChange: (v: string) => void;
+  onNotesChange: (v: string) => void;
+  onTermsChange: (v: string) => void;
+  onContinue: () => void;
+}
+
+const VALIDITY_PRESETS = [15, 30, 60];
+
+function daysBetween(fromIso: string, toIso: string): number {
+  return Math.round((new Date(toIso).getTime() - new Date(fromIso).getTime()) / 86_400_000);
+}
+
+function Step2QuoteDetails({
+  issueDate, validUntil, notes, terms, canContinue,
+  onIssueDateChange, onValidUntilChange, onNotesChange, onTermsChange, onContinue,
+}: Step2QuoteProps) {
+  const span = issueDate && validUntil ? daysBetween(issueDate, validUntil) : null;
+  return (
+    <div className="px-4 mt-3 space-y-4">
+      <label className="block">
+        <span className="text-sm text-ios-ink-sec mb-1 block">Ημερομηνία έκδοσης</span>
+        <input
+          id="quote-issue-date"
+          type="date"
+          required
+          value={issueDate}
+          onChange={(e) => onIssueDateChange(e.target.value)}
+          className="w-full h-12 px-4 rounded-xl bg-white border border-gray-200 text-base"
+        />
+      </label>
+
+      <div>
+        <label className="block">
+          <span className="text-sm text-ios-ink-sec mb-1 block">Ισχύει έως</span>
+          <input
+            id="quote-valid-until"
+            type="date"
+            required
+            min={issueDate}
+            value={validUntil}
+            onChange={(e) => onValidUntilChange(e.target.value)}
+            className="w-full h-12 px-4 rounded-xl bg-white border border-gray-200 text-base"
+          />
+        </label>
+        <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+          {VALIDITY_PRESETS.map((d) => (
+            <button
+              key={d}
+              type="button"
+              onClick={() => onValidUntilChange(addDays(issueDate, d))}
+              className={`chip ${span === d ? 'chip-active' : ''}`}
+              style={{ minHeight: 36, padding: '0 12px', fontSize: 13 }}
+            >
+              {d} ημέρες
+            </button>
+          ))}
+        </div>
+        {validUntil && issueDate && validUntil < issueDate && (
+          <p style={{ fontSize: 12, color: 'var(--clay)', marginTop: 6 }}>
+            Η ισχύς πρέπει να λήγει μετά την ημερομηνία έκδοσης.
+          </p>
+        )}
+      </div>
+
+      <label className="block">
+        <span className="text-sm text-ios-ink-sec mb-1 block">Όροι (προαιρετικό)</span>
+        <textarea
+          id="quote-terms"
+          rows={3}
+          value={terms}
+          onChange={(e) => onTermsChange(e.target.value)}
+          placeholder="π.χ. Τιμές χωρίς μεταφορικά. Πληρωμή 30 ημέρες."
+          className="w-full px-4 py-3 rounded-xl bg-white border border-gray-200 text-base"
+        />
+      </label>
+
+      <label className="block">
+        <span className="text-sm text-ios-ink-sec mb-1 block">Σημειώσεις (προαιρετικό)</span>
+        <textarea
+          id="quote-notes"
+          rows={2}
+          value={notes}
+          onChange={(e) => onNotesChange(e.target.value)}
+          className="w-full px-4 py-3 rounded-xl bg-white border border-gray-200 text-base"
+        />
+      </label>
+
+      <button
+        type="button"
+        disabled={!canContinue}
+        onClick={onContinue}
+        className="w-full h-12 rounded-xl bg-ios-tint text-white font-medium disabled:opacity-50"
+      >
+        Συνέχεια
+      </button>
+    </div>
+  );
+}
+
 /* ---------- Step 3 — Lines ---------- */
 
 interface Step3Props {
@@ -474,12 +621,14 @@ interface Step3Props {
   lines: DraftLine[];
   onChange: (lines: DraftLine[]) => void;
   onContinue: () => void;
+  mode: WizardMode;
 }
 
 function Step3Lines({
   customer, plants, variants, customerPrices, supplierByVariant, costByVariant,
-  lines, onChange, onContinue,
+  lines, onChange, onContinue, mode,
 }: Step3Props) {
+  const docNoun = mode === 'quote' ? 'την προσφορά' : 'την παραγγελία';
   const [sheetOpen, setSheetOpen] = useState(false);
   const [query, setQuery] = useState('');
   // The variant currently being configured in the AddLineSheet. null = closed.
@@ -578,7 +727,7 @@ function Step3Lines({
    */
   function requestAddLine(v: Variant) {
     if (lines.some((l) => l.variant_id === v.id)) {
-      toast.message('Ήδη στην παραγγελία');
+      toast.message(mode === 'quote' ? 'Ήδη στην προσφορά' : 'Ήδη στην παραγγελία');
       return;
     }
     setConfiguringVariant(v);
@@ -716,7 +865,7 @@ function Step3Lines({
             Καμία γραμμή ακόμη
           </p>
           <p style={{ fontSize: 12, color: 'var(--ink-500)', maxWidth: 240, lineHeight: 1.45 }}>
-            Πάτα <strong style={{ color: 'var(--sage-700)' }}>+ Προσθήκη φυτού</strong> για να αρχίσεις την παραγγελία.
+            Πάτα <strong style={{ color: 'var(--sage-700)' }}>+ Προσθήκη φυτού</strong> για να αρχίσεις {docNoun}.
           </p>
         </div>
       ) : (
@@ -999,6 +1148,7 @@ function Step3Lines({
           taps + on a not-yet-added variant. Commits via onAdd → appends to
           lines, closes itself, leaves the search modal as it was. */}
       <AddLineSheet
+        addLabel={mode === 'quote' ? 'Προσθήκη στην προσφορά' : undefined}
         open={configuringVariant !== null}
         variant={configuringVariant}
         plant={configuringVariant ? plants.find((p) => p.id === configuringVariant.plant_id) : undefined}
@@ -1019,6 +1169,7 @@ function Step3Lines({
           set; the server creates plants+variants rows with status='draft'
           during the order submit transaction. */}
       <FreeTextLineSheet
+        addLabel={mode === 'quote' ? 'Προσθήκη στην προσφορά' : undefined}
         open={freeTextOpen}
         initialName={query.trim()}
         onClose={() => setFreeTextOpen(false)}
@@ -1311,8 +1462,12 @@ function LineRow({ line, plant, variant, supplier, cost, onUpdate, onRemove }: L
 /* ---------- Step 4 — Review + Save ---------- */
 
 interface Step4Props {
+  mode: WizardMode;
   customer: Customer;
   deliveryDate: string;
+  issueDate: string;
+  validUntil: string;
+  terms: string;
   notes: string;
   lines: DraftLine[];
   variants: Variant[];
@@ -1321,10 +1476,40 @@ interface Step4Props {
 }
 
 function Step4Review({
-  customer, deliveryDate, notes, lines, variants, plants, supplierByVariant,
+  mode, customer, deliveryDate, issueDate, validUntil, terms, notes, lines, variants, plants, supplierByVariant,
 }: Step4Props) {
   const navigate = useNavigate();
   const save = useCreateDirectOrder();
+  const quoteSaver = useQuoteSaver();
+  // One id for the whole review session: a retry after Bloom's group-price
+  // question (or a network blip) re-saves the SAME quote instead of a twin.
+  const [quoteId] = useState(() => makeQuoteId());
+  const [quoteSaving, setQuoteSaving] = useState<null | 'DRAFT' | 'SENT'>(null);
+  const isQuote = mode === 'quote';
+  // Bloom refuses to send a quote with a matched line priced at 0.
+  const unpricedCount = lines.filter((l) => !l.draft && !(l.unit_price > 0)).length;
+
+  async function onSaveQuote(status: 'DRAFT' | 'SENT') {
+    setQuoteSaving(status);
+    try {
+      const res = await quoteSaver.save(buildNewQuotePayload({
+        quoteId,
+        customerId: customer.id,
+        status,
+        issueDate,
+        validUntil,
+        notes,
+        terms,
+        lines,
+      }));
+      if (!res) return;
+      if (terms.trim()) saveLastTerms(terms.trim());
+      toast.success(status === 'SENT' ? `Η προσφορά ${res.quoteNumber} είναι έτοιμη για αποστολή` : `Πρόχειρο ${res.quoteNumber} αποθηκεύτηκε`);
+      navigate(`/quotes/${res.quoteId}`, { replace: true, state: status === 'SENT' ? { openSend: true } : undefined });
+    } finally {
+      setQuoteSaving(null);
+    }
+  }
 
   const subtotal = lines.reduce((s, l) => s + l.qty * l.unit_price, 0);
   const breakdown = vatBreakdown(
@@ -1371,7 +1556,11 @@ function Step4Review({
       {/* Summary card */}
       <div className="bg-white rounded-xl p-4 space-y-2 shadow-card" style={{ boxShadow: 'var(--shadow-card)' }}>
         <Row label="Πελάτης" value={customer.trading_name || customer.legal_name} />
-        <Row label="Παράδοση" value={fmtLongDate(deliveryDate)} />
+        {isQuote ? (
+          <Row label="Ισχύει έως" value={fmtLongDate(validUntil)} />
+        ) : (
+          <Row label="Παράδοση" value={fmtLongDate(deliveryDate)} />
+        )}
         <Row label="Γραμμές" value={String(lines.length)} />
       </div>
 
@@ -1410,7 +1599,7 @@ function Step4Review({
           const p = plants.find((x) => x.id === v?.plant_id);
           const { primary, secondary } = pickPlantName(p ?? null);
           const supplier = supplierByVariant.get(l.variant_id);
-          const size = v ? sizeDetailsString({
+          const size = l.draft ? (l.draft.size || null) : v ? sizeDetailsString({
             pot_volume_l: v.pot_volume_l,
             height_min_cm: v.height_min_cm,
             height_max_cm: v.height_max_cm,
@@ -1423,7 +1612,7 @@ function Step4Review({
               <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'flex-start', gap: 10 }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <p style={{ fontSize: 14, fontWeight: 500, color: 'var(--ink-900)' }}>
-                    {primary === 'Φυτό' ? variantLabel(l.variant_id) : primary}
+                    {l.draft ? l.draft.name : primary === 'Φυτό' ? variantLabel(l.variant_id) : primary}
                   </p>
                   {secondary && (
                     <p
@@ -1478,18 +1667,61 @@ function Step4Review({
         </div>
       )}
 
+      {isQuote && terms.trim() && (
+        <div
+          className="mt-3 rounded-xl p-3"
+          style={{ background: 'var(--cream-200)' }}
+        >
+          <div className="text-eyebrow" style={{ marginBottom: 4 }}>Όροι</div>
+          <p style={{ fontSize: 13, color: 'var(--ink-700)', lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>{terms}</p>
+        </div>
+      )}
+
       <div
         className="fixed bottom-0 inset-x-0 pb-safe"
         style={{ background: '#fff', borderTop: '1px solid rgba(63,75,70,0.10)', padding: '14px 20px 16px' }}
       >
-        <button
-          type="button"
-          disabled={save.isPending}
-          onClick={onSave}
-          className="btn-primary ios-tap"
-        >
-          {save.isPending ? 'Αποθήκευση…' : 'Αποθήκευση παραγγελίας'}
-        </button>
+        {isQuote ? (
+          <>
+            {unpricedCount > 0 && (
+              <p style={{ fontSize: 12, color: 'var(--clay)', margin: '0 0 8px', textAlign: 'center' }}>
+                {unpricedCount === 1 ? 'Μία γραμμή δεν έχει' : `${unpricedCount} γραμμές δεν έχουν`} τιμή.
+                Αποθήκευσέ την ως πρόχειρο ή βάλε τιμή για αποστολή.
+              </p>
+            )}
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button
+                type="button"
+                disabled={!!quoteSaving}
+                onClick={() => void onSaveQuote('DRAFT')}
+                className="btn-secondary ios-tap"
+                style={{ flex: 1, height: 52 }}
+              >
+                {quoteSaving === 'DRAFT' ? 'Αποθήκευση…' : 'Πρόχειρο'}
+              </button>
+              <button
+                type="button"
+                disabled={!!quoteSaving || unpricedCount > 0}
+                onClick={() => void onSaveQuote('SENT')}
+                className="btn-primary ios-tap"
+                style={{ flex: 1.4 }}
+              >
+                <Send size={17} />
+                {quoteSaving === 'SENT' ? 'Αποθήκευση…' : 'Αποστολή'}
+              </button>
+            </div>
+          </>
+        ) : (
+          <button
+            type="button"
+            disabled={save.isPending}
+            onClick={onSave}
+            className="btn-primary ios-tap"
+          >
+            {save.isPending ? 'Αποθήκευση…' : 'Αποθήκευση παραγγελίας'}
+          </button>
+        )}
+        {quoteSaver.sheet}
       </div>
     </div>
   );

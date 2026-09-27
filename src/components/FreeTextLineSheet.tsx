@@ -18,6 +18,8 @@ export interface FreeTextLineResult {
 
 interface Props {
   open: boolean;
+  /** Commit button text; the quote wizard passes «Προσθήκη στην προσφορά». */
+  addLabel?: string;
   /** Pre-fill for the Όνομα field — usually the search query that
    *  produced "no matches" so the rep doesn't retype. */
   initialName: string;
@@ -39,6 +41,7 @@ interface Props {
  */
 export default function FreeTextLineSheet({
   open,
+  addLabel = 'Προσθήκη στην παραγγελία',
   initialName,
   onClose,
   onAdd,
@@ -328,7 +331,7 @@ export default function FreeTextLineSheet({
           className="btn-primary ios-tap"
         >
           <Plus size={18} color="var(--cream-50)" strokeWidth={2} />
-          Προσθήκη στην παραγγελία
+          {addLabel}
         </button>
       </div>
     </FullScreenSheet>

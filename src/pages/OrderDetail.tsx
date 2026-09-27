@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { Link, useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Bell, Check, Eye, FileText, Minus, Pencil, Plus, Repeat, Send, Trash2, Truck, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { useOrder, usePatchOrder, useCreateAmendment, type AmendmentRequest } from '@/lib/queries';
@@ -499,6 +499,15 @@ export default function OrderDetail() {
         </h1>
         {customerLegal && (
           <p style={{ fontSize: 13, color: 'var(--ink-500)', marginTop: 4 }}>{customerLegal}</p>
+        )}
+        {data.sourceQuote && (
+          <Link
+            to={`/quotes/${data.sourceQuote.id}`}
+            className="font-mono-meta"
+            style={{ display: 'inline-block', fontSize: 12, color: 'var(--sage-700)', marginTop: 6 }}
+          >
+            Από την προσφορά {data.sourceQuote.quote_number} →
+          </Link>
         )}
       </section>
 

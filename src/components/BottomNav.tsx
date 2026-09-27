@@ -1,8 +1,9 @@
 import { NavLink } from 'react-router-dom';
-import { Home, ListOrdered, Calendar as CalendarIcon } from 'lucide-react';
+import { Home, ListOrdered, Calendar as CalendarIcon, FileText } from 'lucide-react';
 
 const tabs = [
   { to: '/', label: 'Αρχική', Icon: Home },
+  { to: '/quotes', label: 'Προσφορές', Icon: FileText },
   { to: '/orders', label: 'Παραγγελίες', Icon: ListOrdered },
   { to: '/calendar', label: 'Ημερολόγιο', Icon: CalendarIcon },
 ];

@@ -171,14 +171,18 @@ bloom-direct-orders/
 | `/orders/new` | `NewOrderWizard` | ✅ | 4-step wizard (Πελάτης → Στοιχεία → Γραμμές → Έλεγχος). |
 | `/orders/:id` | `OrderDetail` | ✅ | Lines, totals, status transitions. |
 | `/calendar` | `Calendar` | ✅ | Month grid of upcoming deliveries. |
+| `/quotes` | `QuotesList` | ✅ | Quotes with status filters (lazy-loaded). |
+| `/quotes/new` | `NewOrderWizard mode="quote"` | ✅ | Same wizard; step 2 = issue date, validity, terms. |
+| `/quotes/:id` | `QuoteDetail` | ✅ | Send, accept (→ order), reject, extend, PDF (lazy-loaded). |
 
 All authed routes are wrapped by `<RequireAuth>`, which:
 1. Redirects to `/login` if `getToken() === null`.
 2. Registers a global 401 handler via `setUnauthorizedHandler` so any
    API call that returns 401 will `logout()` and redirect.
 
-A persistent `<BottomNav>` shows Home / Orders / Calendar tabs on every
-authed page. The wizard hides it during the flow.
+A persistent `<BottomNav>` shows Home / Quotes / Orders / Calendar tabs on
+every authed page. The wizard hides it during the flow. Home is split into
+two stacked cards: «Νέα Προσφορά» above, «Νέα Παραγγελία» below.
 
 ---
 
@@ -279,6 +283,10 @@ shaped this way.
 | GET | `/api/suppliers` | `useSuppliers` | For supplier-name display on variant cards. |
 | GET | `/api/supplier-products` | `useSupplierProducts` | Links variant ↔ supplier. |
 | GET | `/api/supplier-prices` | `useSupplierPrices` | Cheapest-cost map for margin %. |
+| GET | `/api/quotes` | `useQuotes` | List with `lines_count`, net `total_value`, `linked_order_id`. Dates are node-pg timestamps: read with `localDayKey()`. |
+| GET | `/api/quotes/:id` | `useQuote` | `QuoteDetail`: raw `quote_lines` rows + `display`, customer, history, linked order. Dates are `YYYY-MM-DD`. |
+| POST | `/api/quotes/save` | `useSaveQuote` / `useQuoteSaver` | **The desktop's own save.** Every quote write goes here so all Bloom rules run. New quotes omit `quote_number`. |
+| POST | `/api/quotes/:id/send-gmail` | `SendQuoteSheet` | Creates a Gmail draft with the PDF (412 when Gmail isn't connected). |
 
 ### Backend prerequisites in bloom-crm
 
@@ -684,7 +692,26 @@ formatters live. Sentry's fallback error message is also in Greek.
 
 ---
 
-## 20. Glossary
+## 20. Quotes (προσφορές)
+
+See `docs/superpowers/specs/2026-09-27-mobile-offers-app-design.md` for the
+full design. The one rule to keep: **never add a quote-specific write
+endpoint.** Every change goes through `POST /api/quotes/save` with the whole
+quote and ALL its lines (`buildQuoteUpdatePayload` in `lib/quote.ts`), because
+the server replaces `quote_lines` wholesale and runs pricing write-back, group
+guards, spec freeze, cost stamping and accept→order on that path.
+
+- `useQuoteSaver()` wraps the save and answers Bloom's 422
+  `GROUP_PRICE_DEVIATIONS` with `GroupPriceSheet`, then re-sends with
+  `price_scope` on the deviating lines.
+- Column names differ from orders: `unit_sell_price`, `description_override`,
+  `offered_variant_id`.
+- Free-text quote lines stay unmatched (`offered_variant_id = null`). They are
+  not turned into draft catalogue rows the way direct-order lines are.
+- The PDF renderer is shared: `pdf-sales-doc.ts` renders, `pdf-order.ts` and
+  `pdf-quote.ts` map.
+
+## 21. Glossary
 
 | Term | Meaning |
 |---|---|
@@ -699,10 +726,12 @@ formatters live. Sentry's fallback error message is also in Greek.
 | **Δελτίο αποστολής** | "Delivery note". |
 | **ΦΠΑ** | VAT. |
 | **ORD-YYYY-NNN** | Order number format. `nextOrderNumber` in bloom-crm. |
+| **QT-YYYY-NNN** | Quote number format, minted server-side by `nextQuoteNumberFromDb`. |
+| **Προσφορά** | "Quote". |
 
 ---
 
-## 21. Pointers for common changes
+## 22. Pointers for common changes
 
 | I want to… | Touch… |
 |---|---|
