@@ -34,7 +34,7 @@ export default defineConfig({
       // discovered, with no user interaction required. The next fetch
       // on already-open clients serves the new bundles.
       registerType: 'autoUpdate',
-      includeAssets: ['favicon.svg', 'apple-touch-icon.png'],
+      includeAssets: ['favicon.svg', 'apple-touch-icon.png', 'apple-touch-icon-v2.png'],
       manifest: {
         name: 'Bloom Sales Force',
         // Home-screen label; the full name would be truncated on iOS/Android.
@@ -47,9 +47,9 @@ export default defineConfig({
         start_url: '/',
         scope: '/',
         icons: [
-          { src: '/manifest-icons/icon-192.png', sizes: '192x192', type: 'image/png' },
-          { src: '/manifest-icons/icon-512.png', sizes: '512x512', type: 'image/png' },
-          { src: '/manifest-icons/icon-maskable.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+          { src: '/manifest-icons/icon-192-v2.png', sizes: '192x192', type: 'image/png' },
+          { src: '/manifest-icons/icon-512-v2.png', sizes: '512x512', type: 'image/png' },
+          { src: '/manifest-icons/icon-maskable-v2.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
         ],
       },
       workbox: {
