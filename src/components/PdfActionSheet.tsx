@@ -80,8 +80,8 @@ export default function PdfActionSheet({ open, onClose, busy, onGenerate }: Prop
             checked={modes.visual}
             onToggle={() => toggle('visual')}
             icon={<ImageIcon size={18} color="var(--sage-700)" strokeWidth={1.5} />}
-            title="Visual list"
-            subtitle="Φωτογραφία ανά γραμμή για picker"
+            title="Visual Picking List"
+            subtitle="Το πρωτότυπο του Bloom, με φωτογραφία ανά γραμμή"
           />
         </div>
 

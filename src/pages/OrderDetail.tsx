@@ -17,7 +17,7 @@ import { useReminders } from '@/hooks/useReminders';
 import { dismissReminder, fmtReminderWhen } from '@/lib/reminders';
 import { prettyScientificName, cleanSizeSummary } from '@/lib/plant-display';
 import { vatBreakdown, VAT_LABEL } from '@/lib/vat';
-import { apiFetch } from '@/lib/api';
+import { apiFetchBlob } from '@/lib/api';
 import type { DeliveryPdfMode } from '@/lib/pdf-delivery';
 import type { OrderStatus, OrderLineEnriched, OrderDetail as OrderDetailT, Plant, Variant } from '@/types';
 
@@ -124,35 +124,47 @@ export default function OrderDetail() {
     if (modes.length === 0) return;
     setPdfBusy(true);
     try {
-      // Lazy-import so jsPDF + autotable + fonts only land on first use.
-      const { shareOrDownloadDeliveryPdf } = await import('@/lib/pdf-delivery');
+      const localModes = modes.filter((m) => m !== 'visual');
+      const wantVisual = modes.includes('visual');
 
-      // Fetch photos only when the visual mode is selected. The endpoint
-      // is server-side aggregated and base64-encodes each plant photo,
-      // so it can be a few MB on heavy orders — only pay the cost when
-      // we actually need it.
-      let photos: Record<string, string> = {};
-      if (modes.includes('visual')) {
-        try {
-          photos = await apiFetch<Record<string, string>>(`/api/orders/${detail.order.id}/photos`);
-        } catch {
-          // Visual list still renders — every line falls back to the
-          // "No photo" placeholder if the fetch fails.
-          toast.error('Δεν φορτώθηκαν οι φωτογραφίες — placeholder');
+      // The Visual Picking List is Bloom's own document: bloom-crm renders it
+      // with the desktop generator (GET /api/orders/:id/pdf?kind=visual),
+      // photos included. The PWA never draws its own version.
+      if (wantVisual) {
+        const [blob, { shareOrDownloadPdf, downloadPdf }] = await Promise.all([
+          apiFetchBlob(`/api/orders/${encodeURIComponent(detail.order.id)}/pdf?kind=visual`),
+          import('@/lib/pdf-sales-doc'),
+        ]);
+        const vplName = `VPL-${detail.order.order_number}.pdf`;
+        if (localModes.length === 0) {
+          const result = await shareOrDownloadPdf(blob, vplName, `Visual Picking List ${detail.order.order_number}`);
+          toast.success(result === 'shared' ? 'PDF διαμοιράστηκε' : 'PDF κατέβηκε');
+        } else {
+          // Two documents: Bloom's VPL goes to the share sheet below together
+          // with the delivery note; iOS allows one share per tap, so the VPL
+          // is downloaded and the delivery note shared.
+          downloadPdf(blob, vplName);
         }
       }
 
-      // DN number: server-assigned DNs would live on detail.deliveryNotes
-      // — for v1 we fall back to a deterministic preview number based on
-      // the order number so the PDF always has something in the slot.
-      const dnNumber = detail.order.order_number.replace(/^ORD-/, 'DN-');
-
-      const result = await shareOrDownloadDeliveryPdf(detail, { modes, dnNumber, photos });
-      toast.success(result === 'shared' ? 'PDF διαμοιράστηκε' : 'PDF κατέβηκε');
+      if (localModes.length > 0) {
+        // Lazy-import so jsPDF + autotable + fonts only land on first use.
+        const { shareOrDownloadDeliveryPdf } = await import('@/lib/pdf-delivery');
+        // DN number: server-assigned DNs would live on detail.deliveryNotes
+        // — for v1 we fall back to a deterministic preview number based on
+        // the order number so the PDF always has something in the slot.
+        const dnNumber = detail.order.order_number.replace(/^ORD-/, 'DN-');
+        const result = await shareOrDownloadDeliveryPdf(detail, { modes: localModes, dnNumber });
+        toast.success(
+          wantVisual
+            ? `Το Visual Picking List κατέβηκε · ${result === 'shared' ? 'το δελτίο διαμοιράστηκε' : 'το δελτίο κατέβηκε'}`
+            : result === 'shared' ? 'PDF διαμοιράστηκε' : 'PDF κατέβηκε',
+        );
+      }
       setPdfSheetOpen(false);
     } catch (err) {
       console.error('PDF export failed:', err);
-      toast.error('Αποτυχία δημιουργίας PDF');
+      toast.error(err instanceof Error ? err.message : 'Αποτυχία δημιουργίας PDF');
     } finally {
       setPdfBusy(false);
     }

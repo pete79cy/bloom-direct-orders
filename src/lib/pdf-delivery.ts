@@ -1,18 +1,19 @@
 /**
- * Delivery-note PDF generators — Δελτίο αποστολής, Με τιμές, Visual list.
+ * Delivery-note PDF generators — Δελτίο αποστολής, Με τιμές.
  *
  * Mirrors bloom-crm/src/lib/pdf-utils.ts:
  *   - generateDeliverySlipPDF       (formal Δελτίο αποστολής, no prices)
  *   - generatePricedDeliveryNotePDF (Με τιμές + totals)
- *   - generateVisualPickingListPDF  (one row per line with photo)
  *
- * All three share a company header, customer block, and footer pattern.
+ * The Visual Picking List is NOT drawn here — Bloom renders its own
+ * (GET /api/orders/:id/pdf?kind=visual) and the PWA downloads it.
+ *
+ * Both share a company header, customer block, and footer pattern.
  * Each function can either build a fresh document OR append a new page to
  * an existing one — that's how the "all together" combined PDF works:
  *
  *   const doc = await buildSlipDoc(detail);
  *   await appendPricedSection(doc, detail);
- *   await appendVisualSection(doc, detail, photos);
  *
  * Greek glyphs via NotoSans (Regular + Bold), loaded from /fonts/.
  */
@@ -417,102 +418,12 @@ export function appendPricedDeliverySection(
   drawSignatureLines(doc, ty + 20);
 }
 
-/* ── Mode 3 — Visual picking list (photos) ────────────────── */
-
-export function appendVisualPickingSection(
-  doc: jsPDF,
-  detail: OrderDetail,
-  photos: Record<string, string>,
-) {
-  const W = doc.internal.pageSize.getWidth();
-  const pageH = doc.internal.pageSize.getHeight();
-  const M = 12;
-  let y = 10;
-
-  // Header row
-  setFont(doc, 'bold', 14);
-  setColor(doc, [30, 30, 30]);
-  doc.text(`Παραγγελία: ${detail.order.order_number}`, M, y + 6);
-
-  const c = detail.customer;
-  const name = c?.trading_name || c?.legal_name || '';
-  if (name) {
-    setFont(doc, 'normal', 11);
-    setColor(doc, [80, 80, 80]);
-    doc.text(name, M, y + 13);
-  }
-  y += 20;
-  setDraw(doc, [200, 200, 200]);
-  doc.line(M, y, W - M, y);
-  y += 4;
-
-  const PHOTO_W = 50;
-  const PHOTO_H = 50;
-  const ROW_H = 58;
-  const TEXT_X = M + PHOTO_W + 8;
-
-  for (const line of detail.lines) {
-    if (y + ROW_H > pageH - 15) {
-      doc.addPage();
-      y = 12;
-    }
-
-    // Photo or placeholder
-    const photoData = photos[line.variant_id] || null;
-    if (photoData) {
-      try {
-        // The endpoint returns base64 JPEG (or PNG) — jsPDF auto-detects
-        // from the data prefix; we pass 'JPEG' as a hint.
-        doc.addImage(photoData, 'JPEG', M, y, PHOTO_W, PHOTO_H);
-      } catch {
-        drawPhotoPlaceholder(doc, M, y, PHOTO_W, PHOTO_H);
-      }
-    } else {
-      drawPhotoPlaceholder(doc, M, y, PHOTO_W, PHOTO_H);
-    }
-
-    // Plant name — prefer common, fall back to scientific
-    const plantName = line.plant_common_name?.trim()
-      || prettyScientificName(line.plant_scientific_name)
-      || line.description
-      || '';
-    setFont(doc, 'bold', 14);
-    setColor(doc, [30, 30, 30]);
-    doc.text(plantName, TEXT_X, y + 8);
-
-    // Optional scientific (when we promoted common — only show Latin as
-    // secondary line if common is present too)
-    if (line.plant_common_name?.trim() && line.plant_scientific_name) {
-      setFont(doc, 'normal', 10);
-      setColor(doc, [110, 110, 110]);
-      doc.text(prettyScientificName(line.plant_scientific_name), TEXT_X, y + 14);
-    }
-
-    // Size info
-    const size = cleanSizeSummary(line.size_summary);
-    if (size) {
-      setFont(doc, 'normal', 11);
-      setColor(doc, [60, 60, 60]);
-      doc.text(size.toUpperCase(), TEXT_X, y + 22);
-    }
-
-    // Qty — big and right-aligned
-    setFont(doc, 'bold', 22);
-    setColor(doc, [30, 70, 50]);
-    doc.text(`${line.qty} τμχ`, W - M, y + 18, { align: 'right' });
-
-    y += ROW_H;
-  }
-}
-
-function drawPhotoPlaceholder(doc: jsPDF, x: number, y: number, w: number, h: number) {
-  setDraw(doc, [200, 200, 200]);
-  doc.setFillColor(245, 245, 245);
-  doc.roundedRect(x, y, w, h, 2, 2, 'FD');
-  setFont(doc, 'normal', 8);
-  setColor(doc, [180, 180, 180]);
-  doc.text('No photo', x + w / 2, y + h / 2, { align: 'center' });
-}
+/* ── Mode 3 — Visual picking list ─────────────────────────── */
+// Not rendered here. It is Bloom's own document: bloom-crm renders it with
+// the desktop generator at GET /api/orders/:id/pdf?kind=visual and the PWA
+// downloads it (see OrderDetail.onGeneratePdf). 'visual' stays in
+// DeliveryPdfMode only so the PdfActionSheet can offer it alongside the two
+// delivery-note documents; buildDeliveryPdf ignores it.
 
 /* ── Top-level entry: pick modes, return single PDF Blob ──── */
 
@@ -522,8 +433,6 @@ interface BuildOptions {
   modes: DeliveryPdfMode[];
   dnNumber: string;
   notes?: string;
-  /** variant_id → base64; required when 'visual' ∈ modes. */
-  photos?: Record<string, string>;
 }
 
 export async function buildDeliveryPdf(
@@ -543,11 +452,11 @@ export async function buildDeliveryPdf(
   // Render each requested mode, adding a page break between sections.
   let isFirst = true;
   for (const mode of opts.modes) {
+    if (mode === 'visual') continue; // Bloom's document, see above
     if (!isFirst) doc.addPage();
     isFirst = false;
     if (mode === 'slip') appendDeliverySlipSection(doc, detail, meta);
     else if (mode === 'priced') appendPricedDeliverySection(doc, detail, meta);
-    else if (mode === 'visual') appendVisualPickingSection(doc, detail, opts.photos ?? {});
   }
 
   drawFooter(doc);
