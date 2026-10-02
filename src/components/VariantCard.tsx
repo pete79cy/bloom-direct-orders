@@ -81,31 +81,24 @@ export default function VariantCard({
         {/* Primary — Greek name (or promoted scientific) */}
         <p
           style={{
-            fontSize: 15,
-            fontWeight: 500,
+            fontSize: 16,
+            fontWeight: 600,
             color: 'var(--ink-900)',
-            lineHeight: 1.25,
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
+            lineHeight: 1.3,
           }}
         >
           {displayPrimary}
         </p>
 
-        {/* Secondary — scientific Latin, italic serif */}
+        {/* Secondary — scientific Latin, italic */}
         {secondary && (
           <p
-            className="font-display"
             style={{
               fontStyle: 'italic',
-              fontSize: 12,
+              fontSize: 13,
               color: 'var(--ink-500)',
               marginTop: 1,
-              lineHeight: 1.3,
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
+              lineHeight: 1.35,
             }}
           >
             {secondary}
@@ -132,12 +125,10 @@ export default function VariantCard({
           </p>
         ) : supplier ? (
           <p
-            className="text-eyebrow"
             style={{
-              fontSize: 9,
+              fontSize: 12,
               marginTop: 4,
-              color: 'var(--ink-300)',
-              letterSpacing: '0.15em',
+              color: 'var(--ink-500)',
               overflow: 'hidden',
               textOverflow: 'ellipsis',
               whiteSpace: 'nowrap',
@@ -147,16 +138,14 @@ export default function VariantCard({
           </p>
         ) : null}
 
-        {/* Size meta — monospace uppercase */}
+        {/* Size meta */}
         {size && (
           <p
-            className="font-mono-meta"
             style={{
-              fontSize: 10,
-              color: 'var(--ink-500)',
+              fontSize: 13,
+              color: 'var(--ink-700)',
               marginTop: supplier ? 2 : 4,
-              letterSpacing: '0.05em',
-              textTransform: 'uppercase',
+              fontVariantNumeric: 'tabular-nums',
               overflow: 'hidden',
               textOverflow: 'ellipsis',
               whiteSpace: 'nowrap',
@@ -184,11 +173,11 @@ export default function VariantCard({
                 display: 'inline-flex',
                 alignItems: 'center',
                 gap: 4,
-                fontSize: 12,
-                fontWeight: 500,
+                fontSize: 14,
+                fontWeight: 600,
+                fontVariantNumeric: 'tabular-nums',
                 color: isCustomerPrice ? 'var(--sage-700)' : 'var(--ink-900)',
               }}
-              className="font-mono-meta"
               title={isCustomerPrice ? 'Τιμή πελάτη' : 'Default τιμή'}
             >
               {isCustomerPrice && <Tag size={11} color="var(--sage-700)" strokeWidth={1.5} />}

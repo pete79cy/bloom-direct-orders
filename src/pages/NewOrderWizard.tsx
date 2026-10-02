@@ -1252,29 +1252,22 @@ function LineRow({ line, plant, variant, supplier, cost, onUpdate, onRemove }: L
           <p
             style={{
               fontSize: 16,
-              fontWeight: 500,
+              fontWeight: 600,
               color: 'var(--ink-900)',
-              lineHeight: 1.25,
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
+              lineHeight: 1.3,
             }}
           >
             {displayPrimary}
           </p>
-          {/* Secondary — scientific Latin in italic serif */}
+          {/* Secondary — scientific Latin in italic */}
           {secondary && (
             <p
-              className="font-display"
               style={{
                 fontStyle: 'italic',
-                fontSize: 12,
+                fontSize: 13,
                 color: 'var(--ink-500)',
                 marginTop: 1,
-                lineHeight: 1.3,
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
+                lineHeight: 1.35,
               }}
             >
               {secondary}
@@ -1300,12 +1293,10 @@ function LineRow({ line, plant, variant, supplier, cost, onUpdate, onRemove }: L
             </p>
           ) : supplier ? (
             <p
-              className="text-eyebrow"
               style={{
-                fontSize: 9,
+                fontSize: 12,
                 marginTop: 5,
-                color: 'var(--ink-300)',
-                letterSpacing: '0.15em',
+                color: 'var(--ink-500)',
                 overflow: 'hidden',
                 textOverflow: 'ellipsis',
                 whiteSpace: 'nowrap',
@@ -1314,16 +1305,14 @@ function LineRow({ line, plant, variant, supplier, cost, onUpdate, onRemove }: L
               {supplier}
             </p>
           ) : null}
-          {/* Size — mono uppercase */}
+          {/* Size */}
           {size && (
             <p
-              className="font-mono-meta"
               style={{
-                fontSize: 10,
-                color: 'var(--ink-500)',
+                fontSize: 13,
+                color: 'var(--ink-700)',
                 marginTop: supplier ? 2 : 5,
-                letterSpacing: '0.05em',
-                textTransform: 'uppercase',
+                fontVariantNumeric: 'tabular-nums',
               }}
             >
               {size}
@@ -1343,7 +1332,8 @@ function LineRow({ line, plant, variant, supplier, cost, onUpdate, onRemove }: L
       {/* Per-line note (description) — shown only when set. The 💬 marker
           makes it scannable in a long line list so the warehouse picker
           knows immediately which lines have special instructions. */}
-      {line.description && line.description.trim() && (
+      {line.description && line.description.trim()
+        && line.description.trim().toLowerCase() !== displayPrimary.trim().toLowerCase() && (
         <div
           style={{
             display: 'flex',
@@ -1356,7 +1346,7 @@ function LineRow({ line, plant, variant, supplier, cost, onUpdate, onRemove }: L
           }}
         >
           <span style={{ fontSize: 12, lineHeight: 1.2, marginTop: 1 }} aria-hidden="true">💬</span>
-          <p style={{ fontSize: 12, color: 'var(--ink-700)', lineHeight: 1.4, flex: 1 }}>
+          <p style={{ fontSize: 13, color: 'var(--ink-700)', lineHeight: 1.4, flex: 1 }}>
             {line.description}
           </p>
         </div>
@@ -1384,8 +1374,7 @@ function LineRow({ line, plant, variant, supplier, cost, onUpdate, onRemove }: L
             {cost != null ? (
               <>
                 <div
-                  className="font-mono-meta"
-                  style={{ fontSize: 14, fontWeight: 500, color: 'var(--ink-700)' }}
+                  style={{ fontSize: 15, fontWeight: 600, color: 'var(--ink-700)', fontVariantNumeric: 'tabular-nums' }}
                 >
                   {fmtEUR(cost)}
                 </div>
@@ -1397,8 +1386,7 @@ function LineRow({ line, plant, variant, supplier, cost, onUpdate, onRemove }: L
                   const color = isLoss ? 'var(--clay)' : isThin ? 'var(--honey)' : 'var(--sage-600)';
                   return (
                     <div
-                      className="font-mono-meta"
-                      style={{ fontSize: 10, color, marginTop: 3, fontWeight: 500 }}
+                      style={{ fontSize: 12, color, marginTop: 3, fontWeight: 600 }}
                     >
                       {m >= 0 ? '+' : ''}{m.toFixed(0)}% margin
                     </div>
@@ -1450,7 +1438,7 @@ function LineRow({ line, plant, variant, supplier, cost, onUpdate, onRemove }: L
             value={line.vat_rate}
             onChange={(rate) => onUpdate({ vat_rate: rate })}
           />
-          <span className="font-mono-meta" style={{ fontSize: 15, fontWeight: 500 }}>
+          <span style={{ fontSize: 16, fontWeight: 600, whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
             {fmtEUR(line.qty * line.unit_price)}
           </span>
         </div>
@@ -1614,44 +1602,42 @@ function Step4Review({
               {i > 0 && <div className="hairline" style={{ margin: '0 16px' }} />}
               <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'flex-start', gap: 10 }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <p style={{ fontSize: 14, fontWeight: 500, color: 'var(--ink-900)' }}>
+                  <p style={{ fontSize: 16, fontWeight: 600, lineHeight: 1.3, color: 'var(--ink-900)' }}>
                     {l.draft ? l.draft.name : primary === 'Φυτό' ? variantLabel(l.variant_id) : primary}
                   </p>
                   {secondary && (
                     <p
-                      className="font-display"
-                      style={{ fontStyle: 'italic', fontSize: 12, color: 'var(--ink-500)', marginTop: 1 }}
+                      style={{ fontStyle: 'italic', fontSize: 13, lineHeight: 1.35, color: 'var(--ink-500)', marginTop: 1 }}
                     >
                       {secondary}
                     </p>
                   )}
                   {(supplier || size) && (
                     <p
-                      className="font-mono-meta"
                       style={{
-                        fontSize: 10,
+                        fontSize: 13,
+                        lineHeight: 1.4,
                         color: 'var(--ink-500)',
                         marginTop: 3,
-                        letterSpacing: '0.05em',
-                        textTransform: 'uppercase',
+                        fontVariantNumeric: 'tabular-nums',
                       }}
                     >
                       {[supplier, size].filter(Boolean).join(' · ')}
                     </p>
                   )}
                   <p
-                    className="font-mono-meta"
                     style={{
-                      fontSize: 10,
-                      color: 'var(--ink-300)',
+                      fontSize: 13,
+                      lineHeight: 1.4,
+                      color: 'var(--ink-700)',
                       marginTop: 3,
-                      letterSpacing: '0.04em',
+                      fontVariantNumeric: 'tabular-nums',
                     }}
                   >
-                    {l.qty} × {fmtEUR(l.unit_price)} · {VAT_LABEL[l.vat_rate]}
+                    <strong style={{ fontWeight: 600 }}>{l.qty}</strong> × {fmtEUR(l.unit_price)} · {VAT_LABEL[l.vat_rate]}
                   </p>
                 </div>
-                <span className="font-mono-meta" style={{ fontSize: 13, fontWeight: 500, marginTop: 1 }}>
+                <span style={{ fontSize: 15, fontWeight: 600, marginTop: 1, whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
                   {fmtEUR(l.qty * l.unit_price)}
                 </span>
               </div>
