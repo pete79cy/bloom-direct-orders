@@ -737,10 +737,19 @@ export default function OrderDetail() {
           }}
         >
           {lines.map((l, i) => {
-            const hasPlantName = !!prettyScientificName(l.plant_scientific_name);
-            const name = prettyScientificName(l.plant_scientific_name) || l.description || l.variant_id;
+            // Greek name first (what the team reads on the floor), botanical
+            // name underneath. Legacy lines without a catalogue plant carry
+            // the Greek name in `description`, so it doubles as the fallback.
+            const sci = prettyScientificName(l.plant_scientific_name);
+            const description = l.description?.trim() || '';
+            const greek = l.plant_common_name?.trim() || (sci ? description : '');
+            const name = greek || sci || description || l.variant_id;
+            const botanical = greek ? sci : '';
             const size = cleanSizeSummary(l.size_summary);
-            const note = hasPlantName ? l.description?.trim() : null;
+            const note =
+              sci && description && description.toLowerCase() !== greek.toLowerCase()
+                ? description
+                : null;
             const isRemoved = removedIds.has(l.id);
             const qtyVal = editedQty[l.id] ?? l.qty;
             const priceVal = editedPrice[l.id] ?? l.unit_price;
@@ -760,16 +769,29 @@ export default function OrderDetail() {
                 >
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <p
-                      className="font-display"
                       style={{
-                        fontStyle: 'italic',
-                        fontSize: 14,
-                        fontWeight: 500,
+                        fontSize: 16,
+                        fontWeight: 600,
+                        lineHeight: 1.3,
+                        color: 'var(--ink-900)',
                         textDecoration: isRemoved ? 'line-through' : 'none',
                       }}
                     >
                       {name}
                     </p>
+                    {botanical && (
+                      <p
+                        style={{
+                          fontSize: 13,
+                          fontStyle: 'italic',
+                          lineHeight: 1.35,
+                          color: 'var(--ink-500)',
+                          marginTop: 1,
+                        }}
+                      >
+                        {botanical}
+                      </p>
+                    )}
                     {l.variant_status === 'draft' && (
                       <p
                         className="text-eyebrow"
@@ -788,16 +810,15 @@ export default function OrderDetail() {
                     )}
                     {!editMode && (
                       <p
-                        className="font-mono-meta"
                         style={{
-                          fontSize: 10,
-                          color: 'var(--ink-500)',
-                          marginTop: 2,
-                          letterSpacing: '0.05em',
-                          textTransform: 'uppercase',
+                          fontSize: 13,
+                          lineHeight: 1.4,
+                          color: 'var(--ink-700)',
+                          marginTop: 4,
+                          fontVariantNumeric: 'tabular-nums',
                         }}
                       >
-                        {size ? `${size} · ` : ''}{l.qty} × {fmtEUR(l.unit_price)}
+                        {size ? `${size} · ` : ''}<strong style={{ fontWeight: 600 }}>{l.qty}</strong> × {fmtEUR(l.unit_price)}
                       </p>
                     )}
                     {editMode && (
@@ -956,18 +977,19 @@ export default function OrderDetail() {
                         }}
                       >
                         <span style={{ fontSize: 11, lineHeight: 1.2 }} aria-hidden="true">💬</span>
-                        <p style={{ fontSize: 11, color: 'var(--ink-700)', lineHeight: 1.4, flex: 1 }}>
+                        <p style={{ fontSize: 13, color: 'var(--ink-700)', lineHeight: 1.4, flex: 1 }}>
                           {note}
                         </p>
                       </div>
                     )}
                   </div>
                   <span
-                    className="font-mono-meta"
                     style={{
-                      fontSize: 13,
-                      fontWeight: 500,
-                      marginTop: 2,
+                      fontSize: 15,
+                      fontWeight: 600,
+                      marginTop: 1,
+                      whiteSpace: 'nowrap',
+                      fontVariantNumeric: 'tabular-nums',
                       textDecoration: isRemoved ? 'line-through' : 'none',
                       color: isRemoved ? 'var(--ink-500)' : 'var(--ink-900)',
                     }}
@@ -981,7 +1003,10 @@ export default function OrderDetail() {
 
           {/* Added (unsaved) lines */}
           {addedLines.map((a, i) => {
-            const name = prettyScientificName(a.plant_scientific_name) || a.plant_common_name || a.description || a.variant_id;
+            const addedSci = prettyScientificName(a.plant_scientific_name);
+            const addedGreek = a.plant_common_name?.trim() || '';
+            const name = addedGreek || addedSci || a.description || a.variant_id;
+            const botanical = addedGreek ? addedSci : '';
             return (
               <div key={a.tmpId}>
                 {(lines.length > 0 || i > 0) && <div className="hairline" style={{ margin: '0 16px' }} />}
@@ -995,12 +1020,14 @@ export default function OrderDetail() {
                   }}
                 >
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <p
-                      className="font-display"
-                      style={{ fontStyle: 'italic', fontSize: 14, fontWeight: 500 }}
-                    >
+                    <p style={{ fontSize: 16, fontWeight: 600, lineHeight: 1.3, color: 'var(--ink-900)' }}>
                       {name}
                     </p>
+                    {botanical && (
+                      <p style={{ fontSize: 13, fontStyle: 'italic', lineHeight: 1.35, color: 'var(--ink-500)', marginTop: 1 }}>
+                        {botanical}
+                      </p>
+                    )}
                     <p
                       className="text-eyebrow"
                       style={{
@@ -1013,19 +1040,18 @@ export default function OrderDetail() {
                       ΝΕΑ
                     </p>
                     <p
-                      className="font-mono-meta"
                       style={{
-                        fontSize: 10,
-                        color: 'var(--ink-500)',
-                        marginTop: 2,
-                        letterSpacing: '0.05em',
-                        textTransform: 'uppercase',
+                        fontSize: 13,
+                        lineHeight: 1.4,
+                        color: 'var(--ink-700)',
+                        marginTop: 4,
+                        fontVariantNumeric: 'tabular-nums',
                       }}
                     >
-                      {a.size_summary ? `${a.size_summary} · ` : ''}{a.qty} × {fmtEUR(a.unit_price)}
+                      {a.size_summary ? `${a.size_summary} · ` : ''}<strong style={{ fontWeight: 600 }}>{a.qty}</strong> × {fmtEUR(a.unit_price)}
                     </p>
                   </div>
-                  <span className="font-mono-meta" style={{ fontSize: 13, fontWeight: 500, marginTop: 2 }}>
+                  <span style={{ fontSize: 15, fontWeight: 600, marginTop: 1, whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
                     {fmtEUR(a.qty * a.unit_price)}
                   </span>
                   <button
