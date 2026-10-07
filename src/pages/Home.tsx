@@ -1,5 +1,5 @@
 import { Link, useNavigate } from 'react-router-dom';
-import { Bell, Check, ChevronRight, FileText, Leaf, LogOut, ShoppingCart, UserPlus } from 'lucide-react';
+import { Bell, Check, ChevronRight, FileText, Layers, Leaf, LogOut, ShoppingCart, UserPlus } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useOrders, useCustomers, useQuotes } from '@/lib/queries';
 import { fmtShortDate, dayKey, localDayKey, addDays } from '@/lib/format';
@@ -151,40 +151,13 @@ export default function Home() {
         />
       </div>
 
-      {/* Secondary: add a customer directly (also the target of the iOS
-          "Add to Bloom" Shortcut, which deep-links here pre-filled from a
-          phone contact). */}
-      <div style={{ padding: '10px 20px 0', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-        <Link
-          to="/customers/new"
-          className="ios-tap"
-          style={{
-            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-            height: 46, borderRadius: 14,
-            background: '#fff', border: '1px solid rgba(63,75,70,0.12)',
-            color: 'var(--sage-800)', fontSize: 15, fontWeight: 500,
-            textDecoration: 'none',
-          }}
-        >
-          <UserPlus size={18} strokeWidth={1.9} />
-          Νέος πελάτης
-        </Link>
-        {/* Add a catalogue item on the spot — same two Bloom calls as the
-            desktop "New Product" dialog, phone-sized form. */}
-        <Link
-          to="/products/new"
-          className="ios-tap"
-          style={{
-            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-            height: 46, borderRadius: 14,
-            background: '#fff', border: '1px solid rgba(63,75,70,0.12)',
-            color: 'var(--sage-800)', fontSize: 15, fontWeight: 500,
-            textDecoration: 'none',
-          }}
-        >
-          <Leaf size={18} strokeWidth={1.9} />
-          Νέο προϊόν
-        </Link>
+      {/* Secondary: add a customer, a catalogue product, or one more size of
+          an existing product. The customer button is also the target of the
+          iOS "Add to Bloom" Shortcut (deep-links here pre-filled). */}
+      <div style={{ padding: '10px 20px 0', display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+        <QuickLink to="/customers/new" icon={<UserPlus size={20} strokeWidth={1.9} />} label="Νέος πελάτης" />
+        <QuickLink to="/products/new" icon={<Leaf size={20} strokeWidth={1.9} />} label="Νέο προϊόν" />
+        <QuickLink to="/products/new/size" icon={<Layers size={20} strokeWidth={1.9} />} label="Νέο υποπροϊόν" />
       </div>
 
       {/* Due reminders — device-local, set from order detail */}
@@ -409,5 +382,25 @@ function ModeCard({
         ))}
       </div>
     </div>
+  );
+}
+
+/** Icon-over-label tile for the secondary "add …" row. */
+function QuickLink({ to, icon, label }: { to: string; icon: ReactNode; label: string }) {
+  return (
+    <Link
+      to={to}
+      className="ios-tap"
+      style={{
+        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 6,
+        minHeight: 68, padding: '10px 6px', borderRadius: 14,
+        background: '#fff', border: '1px solid rgba(63,75,70,0.12)',
+        color: 'var(--sage-800)', fontSize: 13, fontWeight: 500, lineHeight: 1.15, textAlign: 'center',
+        textDecoration: 'none',
+      }}
+    >
+      {icon}
+      <span>{label}</span>
+    </Link>
   );
 }

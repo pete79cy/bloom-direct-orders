@@ -1,38 +1,70 @@
-import { useState, type ReactNode } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
-import { ArrowLeft, Check, FileText, Loader2, Plus, ShoppingCart, Sparkles } from 'lucide-react';
+import { ArrowLeft, Check, FileText, Loader2, Plus, Search, ShoppingCart, Sparkles, X } from 'lucide-react';
 import CustomerFormField from '@/components/CustomerFormField';
 import PriceInput from '@/components/PriceInput';
 import VatPicker from '@/components/VatPicker';
-import { lookupBotanicalName, useCreateProduct, type CreateProductResponse } from '@/lib/queries';
+import {
+  lookupBotanicalName, useCreateProduct, useCreateVariant, usePlants, useVariants,
+} from '@/lib/queries';
 import {
   COMMON_POT_SIZES_L, EMPTY_PRODUCT_FORM, PLANT_TYPE_LABEL, PRODUCT_KIND_LABEL, botanicalCandidates,
-  buildPlantBody, buildVariantBody, describeProductSize, validateProductForm,
+  buildPlantBody, buildVariantBody, describeProductSize, validateProductForm, validateSubproductForm,
   type NewProductForm, type PlantType, type ProductKind,
 } from '@/lib/new-product';
 import { fmtEUR } from '@/lib/format';
+import { pickPlantName, sizeDetailsString, fallbackVariantLabel } from '@/lib/plant-display';
+import { normalizeForSearch } from '@/lib/search';
 import type { DuplicateSeed } from '@/pages/NewOrderWizard';
+import type { Plant, Variant } from '@/types';
+
+export type AddProductMode = 'product' | 'subproduct';
 
 /**
- * «Νέο προϊόν» — add a catalogue item from the phone in under a minute.
+ * «Νέο προϊόν» / «Νέο υποπροϊόν» — add to the catalogue from the phone in
+ * under a minute.
  *
- * One screen, Greek name first, the pot size as tap chips, everything else
- * optional. Saves through the same two Bloom endpoints the desktop dialog
- * uses, then offers to start an order or quote with the new line already in.
+ * product:    Greek name first, pot size as tap chips, everything else
+ *             optional. Saves through the same two Bloom endpoints the
+ *             desktop "New Product" dialog uses (plant, then variant).
+ * subproduct: pick an existing product, see the sizes it already has, add
+ *             one more (the desktop "New Subproduct" — variant only).
+ *
+ * Both end on a card that offers to start an order or quote with the new
+ * line already in.
  */
-export default function AddProductPage() {
+export default function AddProductPage({ mode = 'product' }: { mode?: AddProductMode }) {
   const navigate = useNavigate();
-  const create = useCreateProduct();
+  const createProduct = useCreateProduct();
+  const createVariant = useCreateVariant();
+  const sub = mode === 'subproduct';
+  const { data: plants = [] } = usePlants();
+  const { data: variants = [] } = useVariants();
+
   const [form, setForm] = useState<NewProductForm>(EMPTY_PRODUCT_FORM);
+  const [parent, setParent] = useState<Plant | null>(null);
   const [more, setMore] = useState(false);
   const [lookupBusy, setLookupBusy] = useState(false);
   const [suggestions, setSuggestions] = useState<string[]>([]);
-  const [created, setCreated] = useState<CreateProductResponse | null>(null);
+  const [created, setCreated] = useState<{ variantId: string; name: string; botanical: string | null } | null>(null);
 
   const set = <K extends keyof NewProductForm>(k: K, v: NewProductForm[K]) => setForm((f) => ({ ...f, [k]: v }));
-  const problem = validateProductForm(form);
-  const isPlant = form.kind === 'plant';
+  const setAttr = <K extends keyof NewProductForm['attributes']>(k: K, v: NewProductForm['attributes'][K]) =>
+    setForm((f) => ({ ...f, attributes: { ...f.attributes, [k]: v } }));
+
+  // Sizes the chosen product already has — shown so the user doesn't re-add
+  // one, and used to refuse an exact duplicate before the round trip.
+  const siblings = useMemo(
+    () => (parent ? variants.filter((v) => v.plant_id === parent.id) : []),
+    [variants, parent],
+  );
+  const kind: ProductKind = sub ? (parent?.product_kind ?? 'plant') : form.kind;
+  const isPlant = kind === 'plant';
+  const problem = sub
+    ? validateSubproductForm(form, parent, siblings.map((v) => v.variant_code))
+    : validateProductForm(form);
+  const saving = createProduct.isPending || createVariant.isPending;
 
   async function onLookup() {
     const q = form.commonName.trim();
@@ -62,9 +94,16 @@ export default function AddProductPage() {
       return;
     }
     try {
-      const res = await create.mutateAsync({ plant: buildPlantBody(form), variant: buildVariantBody(form) });
-      setCreated(res);
-      toast.success('Το προϊόν προστέθηκε στον κατάλογο');
+      if (sub && parent) {
+        const v = await createVariant.mutateAsync({ plantId: parent.id, variant: buildVariantBody(form, parent) });
+        const n = pickPlantName(parent);
+        setCreated({ variantId: v.id, name: n.primary, botanical: n.secondary });
+        toast.success('Το μέγεθος προστέθηκε στο προϊόν');
+      } else {
+        const res = await createProduct.mutateAsync({ plant: buildPlantBody(form), variant: buildVariantBody(form) });
+        setCreated({ variantId: res.variant.id, name: form.commonName.trim(), botanical: form.scientificName.trim() || null });
+        toast.success('Το προϊόν προστέθηκε στον κατάλογο');
+      }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Αποτυχία δημιουργίας');
     }
@@ -74,16 +113,20 @@ export default function AddProductPage() {
     if (!created) return;
     const seed: DuplicateSeed = {
       customer: null,
-      lines: [{
-        variant_id: created.variant.id,
-        qty: 1,
-        unit_price: form.unitPrice,
-        vat_rate: form.vatRate,
-        description: '',
-      }],
+      lines: [{ variant_id: created.variantId, qty: 1, unit_price: form.unitPrice, vat_rate: form.vatRate, description: '' }],
     };
     navigate(path, { state: { duplicate: seed } });
   }
+
+  function reset(keepParent: boolean) {
+    setForm(EMPTY_PRODUCT_FORM);
+    setSuggestions([]);
+    setCreated(null);
+    if (!keepParent) setParent(null);
+  }
+
+  const title = sub ? 'Νέο υποπροϊόν' : 'Νέο προϊόν';
+  const sizeLine = describeProductSize(form, kind);
 
   return (
     <div className="min-h-screen" style={{ background: 'var(--cream-100)', display: 'flex', flexDirection: 'column' }}>
@@ -103,7 +146,7 @@ export default function AddProductPage() {
         <div>
           <div className="text-eyebrow">Κατάλογος</div>
           <h1 className="font-display" style={{ fontSize: 24, lineHeight: 1.05, color: 'var(--ink-900)', fontWeight: 500, marginTop: 2 }}>
-            {created ? 'Προστέθηκε' : 'Νέο προϊόν'}
+            {created ? 'Προστέθηκε' : title}
           </h1>
         </div>
       </header>
@@ -122,12 +165,12 @@ export default function AddProductPage() {
               <Check size={22} strokeWidth={2.4} />
             </div>
             <div style={{ minWidth: 0 }}>
-              <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--ink-900)' }}>{form.commonName.trim()}</div>
-              {form.scientificName.trim() && (
-                <div className="font-display" style={{ fontStyle: 'italic', fontSize: 13, color: 'var(--ink-500)' }}>{form.scientificName.trim()}</div>
+              <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--ink-900)' }}>{created.name}</div>
+              {created.botanical && (
+                <div className="font-display" style={{ fontStyle: 'italic', fontSize: 13, color: 'var(--ink-500)' }}>{created.botanical}</div>
               )}
               <div className="font-mono-meta" style={{ fontSize: 12, color: 'var(--ink-500)', marginTop: 2 }}>
-                {[describeProductSize(form), form.unitPrice > 0 ? fmtEUR(form.unitPrice) : null].filter(Boolean).join(' · ') || PRODUCT_KIND_LABEL[form.kind]}
+                {[sizeLine, form.unitPrice > 0 ? fmtEUR(form.unitPrice) : null].filter(Boolean).join(' · ') || PRODUCT_KIND_LABEL[kind]}
               </div>
             </div>
           </div>
@@ -146,12 +189,12 @@ export default function AddProductPage() {
           </button>
           <button
             type="button"
-            onClick={() => { setForm(EMPTY_PRODUCT_FORM); setSuggestions([]); setCreated(null); }}
+            onClick={() => reset(sub)}
             className="ios-tap"
             style={{ height: 44, color: 'var(--sage-800)', fontSize: 15, fontWeight: 500, background: 'transparent' }}
           >
             <Plus size={16} style={{ display: 'inline', verticalAlign: -3, marginRight: 6 }} />
-            Και άλλο προϊόν
+            {sub ? 'Και άλλο μέγεθος' : 'Και άλλο προϊόν'}
           </button>
           <button type="button" onClick={() => navigate('/')} className="ios-tap" style={{ height: 44, color: 'var(--ink-500)', fontSize: 15, background: 'transparent' }}>
             Τέλος
@@ -160,157 +203,268 @@ export default function AddProductPage() {
       ) : (
         <>
           <div style={{ flex: 1, overflowY: 'auto', padding: '12px 20px 24px' }}>
-            {/* Kind */}
-            <Segmented<ProductKind>
-              value={form.kind}
-              options={(['plant', 'pot', 'other'] as ProductKind[]).map((k) => ({ value: k, label: PRODUCT_KIND_LABEL[k] }))}
-              onChange={(k) => set('kind', k)}
-            />
-
-            <div style={{ height: 18 }} />
-
-            <CustomerFormField
-              label={isPlant ? 'Όνομα φυτού' : 'Όνομα προϊόντος'}
-              required
-              value={form.commonName}
-              onChange={(v) => set('commonName', v)}
-              placeholder={isPlant ? 'π.χ. Λεβάντα' : 'π.χ. Γλάστρα τερακότα 30'}
-              autoFocus
-            />
-
-            {isPlant && (
-              <Field label="Βοτανικό όνομα" hint="προαιρετικό">
-                <div style={{ display: 'flex', gap: 8 }}>
-                  <input
-                    type="text"
-                    value={form.scientificName}
-                    onChange={(e) => set('scientificName', e.target.value)}
-                    placeholder="π.χ. Lavandula angustifolia"
-                    autoCapitalize="none"
-                    style={{
-                      flex: 1, minWidth: 0, height: 46, padding: '0 14px', background: '#fff', fontStyle: form.scientificName ? 'italic' : 'normal',
-                      border: '1px solid rgba(63,75,70,0.12)', borderRadius: 12, fontSize: 16, outline: 'none',
-                    }}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => void onLookup()}
-                    disabled={lookupBusy || form.commonName.trim().length < 2}
-                    aria-label="Εύρεση βοτανικού ονόματος"
-                    className="ios-tap"
-                    style={{
-                      width: 46, height: 46, borderRadius: 12, flexShrink: 0,
-                      background: '#fff', border: '1px solid rgba(63,75,70,0.14)', color: 'var(--sage-700)',
-                      display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                      opacity: lookupBusy || form.commonName.trim().length < 2 ? 0.5 : 1,
-                    }}
-                  >
-                    {lookupBusy ? <Loader2 size={18} className="animate-spin" /> : <Sparkles size={18} />}
-                  </button>
-                </div>
-                {suggestions.length > 0 && (
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
-                    {suggestions.map((s) => (
-                      <Chip key={s} active={false} onClick={() => { set('scientificName', s); setSuggestions([]); }}>
-                        <span style={{ fontStyle: 'italic' }}>{s}</span>
-                      </Chip>
-                    ))}
-                  </div>
-                )}
-              </Field>
-            )}
-
-            {isPlant && (
-              <Field label="Γλάστρα" required>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                  {COMMON_POT_SIZES_L.map((l) => (
-                    <Chip key={l} active={form.potVolumeL === l} onClick={() => set('potVolumeL', l)}>
-                      {l}L
-                    </Chip>
-                  ))}
-                  <label
-                    style={{
-                      display: 'inline-flex', alignItems: 'center', gap: 4, height: 36, padding: '0 10px', borderRadius: 999,
-                      background: '#fff', border: '1px solid rgba(63,75,70,0.14)',
-                    }}
-                  >
-                    <input
-                      type="number"
-                      inputMode="decimal"
-                      min="0"
-                      step="0.5"
-                      aria-label="Άλλο μέγεθος γλάστρας (λίτρα)"
-                      placeholder="άλλο"
-                      value={form.potVolumeL != null && !COMMON_POT_SIZES_L.includes(form.potVolumeL) ? form.potVolumeL : ''}
-                      onChange={(e) => {
-                        const n = Number.parseFloat(e.target.value.replace(',', '.'));
-                        set('potVolumeL', Number.isFinite(n) && n > 0 ? n : null);
-                      }}
-                      className="font-mono-meta"
-                      style={{ width: 48, border: 0, outline: 'none', background: 'transparent', fontSize: 14, textAlign: 'center' }}
-                    />
-                    <span style={{ fontSize: 13, color: 'var(--ink-500)' }}>L</span>
-                  </label>
-                </div>
-              </Field>
-            )}
-
-            {isPlant && (
-              <Field label="Ύψος (cm)" hint="προαιρετικό">
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <NumberBox label="Ύψος από" value={form.heightMinCm} onChange={(n) => set('heightMinCm', n)} placeholder="από" />
-                  <span style={{ color: 'var(--ink-300)' }}>–</span>
-                  <NumberBox label="Ύψος έως" value={form.heightMaxCm} onChange={(n) => set('heightMaxCm', n)} placeholder="έως" />
-                </div>
-              </Field>
-            )}
-
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 12, alignItems: 'end', marginBottom: 16 }}>
-              <Field label="Τιμή πώλησης" hint="προαιρετικό" compact>
-                <PriceInput value={form.unitPrice} onChange={(n) => set('unitPrice', n)} />
-              </Field>
-              <Field label="ΦΠΑ" compact>
-                <VatPicker value={form.vatRate} onChange={(r) => set('vatRate', r)} />
-              </Field>
-            </div>
-
-            {isPlant && !more && (
-              <button type="button" onClick={() => setMore(true)} style={{ fontSize: 14, color: 'var(--sage-700)', fontWeight: 500, background: 'transparent', padding: '4px 0' }}>
-                Περισσότερα (τύπος φυτού, σημείωση)
-              </button>
-            )}
-            {(more || !isPlant) && (
+            {sub ? (
+              <ParentPicker plants={plants} value={parent} onChange={(p) => { setParent(p); setForm((f) => ({ ...EMPTY_PRODUCT_FORM, unitPrice: f.unitPrice, vatRate: f.vatRate })); }} siblings={siblings} />
+            ) : (
               <>
+                <Segmented<ProductKind>
+                  value={form.kind}
+                  options={(['plant', 'pot', 'other'] as ProductKind[]).map((k) => ({ value: k, label: PRODUCT_KIND_LABEL[k] }))}
+                  onChange={(k) => set('kind', k)}
+                />
+                <div style={{ height: 18 }} />
+                <CustomerFormField
+                  label={isPlant ? 'Όνομα φυτού' : 'Όνομα προϊόντος'}
+                  required
+                  value={form.commonName}
+                  onChange={(v) => set('commonName', v)}
+                  placeholder={isPlant ? 'π.χ. Λεβάντα' : 'π.χ. Γλάστρα τερακότα'}
+                  autoFocus
+                />
                 {isPlant && (
-                  <Field label="Τύπος φυτού">
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                      {(Object.keys(PLANT_TYPE_LABEL) as PlantType[]).map((t) => (
-                        <Chip key={t} active={form.plantType === t} onClick={() => set('plantType', t)}>{PLANT_TYPE_LABEL[t]}</Chip>
-                      ))}
+                  <Field label="Βοτανικό όνομα" hint="προαιρετικό">
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <input
+                        type="text"
+                        value={form.scientificName}
+                        onChange={(e) => set('scientificName', e.target.value)}
+                        placeholder="π.χ. Lavandula angustifolia"
+                        autoCapitalize="none"
+                        style={{
+                          flex: 1, minWidth: 0, height: 46, padding: '0 14px', background: '#fff', fontStyle: form.scientificName ? 'italic' : 'normal',
+                          border: '1px solid rgba(63,75,70,0.12)', borderRadius: 12, fontSize: 16, outline: 'none',
+                        }}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => void onLookup()}
+                        disabled={lookupBusy || form.commonName.trim().length < 2}
+                        aria-label="Εύρεση βοτανικού ονόματος"
+                        className="ios-tap"
+                        style={{
+                          width: 46, height: 46, borderRadius: 12, flexShrink: 0,
+                          background: '#fff', border: '1px solid rgba(63,75,70,0.14)', color: 'var(--sage-700)',
+                          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                          opacity: lookupBusy || form.commonName.trim().length < 2 ? 0.5 : 1,
+                        }}
+                      >
+                        {lookupBusy ? <Loader2 size={18} className="animate-spin" /> : <Sparkles size={18} />}
+                      </button>
+                    </div>
+                    {suggestions.length > 0 && (
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+                        {suggestions.map((s) => (
+                          <Chip key={s} active={false} onClick={() => { set('scientificName', s); setSuggestions([]); }}>
+                            <span style={{ fontStyle: 'italic' }}>{s}</span>
+                          </Chip>
+                        ))}
+                      </div>
+                    )}
+                  </Field>
+                )}
+              </>
+            )}
+
+            {(!sub || parent) && (
+              <>
+                {isPlant ? (
+                  <>
+                    <Field label="Γλάστρα" required>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                        {COMMON_POT_SIZES_L.map((l) => (
+                          <Chip key={l} active={form.potVolumeL === l} onClick={() => set('potVolumeL', l)}>{l}L</Chip>
+                        ))}
+                        <label
+                          style={{
+                            display: 'inline-flex', alignItems: 'center', gap: 4, height: 36, padding: '0 10px', borderRadius: 999,
+                            background: '#fff', border: '1px solid rgba(63,75,70,0.14)',
+                          }}
+                        >
+                          <input
+                            type="number"
+                            inputMode="decimal"
+                            min="0"
+                            step="0.5"
+                            aria-label="Άλλο μέγεθος γλάστρας (λίτρα)"
+                            placeholder="άλλο"
+                            value={form.potVolumeL != null && !COMMON_POT_SIZES_L.includes(form.potVolumeL) ? form.potVolumeL : ''}
+                            onChange={(e) => {
+                              const n = Number.parseFloat(e.target.value.replace(',', '.'));
+                              set('potVolumeL', Number.isFinite(n) && n > 0 ? n : null);
+                            }}
+                            className="font-mono-meta"
+                            style={{ width: 48, border: 0, outline: 'none', background: 'transparent', fontSize: 14, textAlign: 'center' }}
+                          />
+                          <span style={{ fontSize: 13, color: 'var(--ink-500)' }}>L</span>
+                        </label>
+                      </div>
+                    </Field>
+                    <Field label="Ύψος (cm)" hint="προαιρετικό">
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <NumberBox label="Ύψος από" value={form.heightMinCm} onChange={(n) => set('heightMinCm', n)} placeholder="από" />
+                        <span style={{ color: 'var(--ink-300)' }}>–</span>
+                        <NumberBox label="Ύψος έως" value={form.heightMaxCm} onChange={(n) => set('heightMaxCm', n)} placeholder="έως" />
+                      </div>
+                    </Field>
+                  </>
+                ) : (
+                  <Field label="Χαρακτηριστικά" hint="προαιρετικό">
+                    <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+                      <NumberBox label="Διάμετρος (cm)" value={form.attributes.diameter_cm} onChange={(n) => setAttr('diameter_cm', n)} placeholder="Ø cm" />
+                      <NumberBox label="Ύψος (cm)" value={form.attributes.height_cm} onChange={(n) => setAttr('height_cm', n)} placeholder="ύψος cm" />
+                    </div>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <TextBox label="Υλικό" value={form.attributes.material} onChange={(v) => setAttr('material', v)} placeholder="υλικό" />
+                      <TextBox label="Χρώμα" value={form.attributes.color} onChange={(v) => setAttr('color', v)} placeholder="χρώμα" />
                     </div>
                   </Field>
                 )}
-                <CustomerFormField label="Σημείωση" value={form.notes} onChange={(v) => set('notes', v)} placeholder="π.χ. μόνο κατόπιν παραγγελίας" />
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 12, alignItems: 'end', marginBottom: 16 }}>
+                  <Field label="Τιμή πώλησης" hint="προαιρετικό" compact>
+                    <PriceInput value={form.unitPrice} onChange={(n) => set('unitPrice', n)} />
+                  </Field>
+                  <Field label="ΦΠΑ" compact>
+                    <VatPicker value={form.vatRate} onChange={(r) => set('vatRate', r)} />
+                  </Field>
+                </div>
+
+                {isPlant && !more && (
+                  <button type="button" onClick={() => setMore(true)} style={{ fontSize: 14, color: 'var(--sage-700)', fontWeight: 500, background: 'transparent', padding: '4px 0' }}>
+                    Περισσότερα (τύπος φυτού{sub ? '' : ', σημείωση'})
+                  </button>
+                )}
+                {(more || !isPlant) && (
+                  <>
+                    {isPlant && (
+                      <Field label="Τύπος φυτού">
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                          {(Object.keys(PLANT_TYPE_LABEL) as PlantType[]).map((t) => (
+                            <Chip key={t} active={form.plantType === t} onClick={() => set('plantType', t)}>{PLANT_TYPE_LABEL[t]}</Chip>
+                          ))}
+                        </div>
+                      </Field>
+                    )}
+                    {!sub && (
+                      <CustomerFormField label="Σημείωση" value={form.notes} onChange={(v) => set('notes', v)} placeholder="π.χ. μόνο κατόπιν παραγγελίας" />
+                    )}
+                  </>
+                )}
               </>
             )}
           </div>
 
           <div className="pb-safe" style={{ padding: '14px 20px 16px', background: '#fff', borderTop: '1px solid rgba(63,75,70,0.10)' }}>
-            {problem && form.commonName.trim().length >= 2 && (
+            {problem && (sub ? !!parent : form.commonName.trim().length >= 2) && (
               <p style={{ fontSize: 12, color: 'var(--ink-500)', margin: '0 0 8px', textAlign: 'center' }}>{problem}</p>
             )}
-            <button type="button" disabled={!!problem || create.isPending} onClick={() => void onSave()} className="btn-primary ios-tap">
-              {create.isPending ? (
+            <button type="button" disabled={!!problem || saving} onClick={() => void onSave()} className="btn-primary ios-tap">
+              {saving ? (
                 <>
                   <Loader2 size={16} color="var(--cream-50)" className="animate-spin" />
                   Αποθήκευση…
                 </>
-              ) : 'Αποθήκευση προϊόντος'}
+              ) : sub ? 'Αποθήκευση μεγέθους' : 'Αποθήκευση προϊόντος'}
             </button>
           </div>
         </>
       )}
     </div>
+  );
+}
+
+/** Search-as-you-type over the catalogue's products (not sizes); once one
+ *  is picked it shows as a card with the sizes it already has. */
+function ParentPicker({
+  plants, value, onChange, siblings,
+}: { plants: Plant[]; value: Plant | null; onChange: (p: Plant | null) => void; siblings: Variant[] }) {
+  const [query, setQuery] = useState('');
+  const q = normalizeForSearch(query.trim());
+  const hits = useMemo(() => {
+    if (q.length < 2) return [];
+    return plants
+      .filter((p) => normalizeForSearch(`${p.common_name ?? ''} ${p.scientific_name}`).includes(q))
+      .slice(0, 8);
+  }, [plants, q]);
+
+  if (value) {
+    const n = pickPlantName(value);
+    return (
+      <Field label="Προϊόν" required>
+        <div style={{ background: '#fff', borderRadius: 14, boxShadow: 'var(--shadow-card)', padding: '12px 14px' }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--ink-900)' }}>{n.primary}</div>
+              {n.secondary && <div className="font-display" style={{ fontStyle: 'italic', fontSize: 13, color: 'var(--ink-500)' }}>{n.secondary}</div>}
+            </div>
+            <button
+              type="button"
+              onClick={() => onChange(null)}
+              aria-label="Αλλαγή προϊόντος"
+              className="ios-tap"
+              style={{ width: 32, height: 32, borderRadius: 999, background: 'var(--cream-200)', color: 'var(--ink-700)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
+            >
+              <X size={16} />
+            </button>
+          </div>
+          <div className="hairline" style={{ margin: '10px 0 8px' }} />
+          <div className="text-eyebrow" style={{ fontSize: 9, color: 'var(--ink-500)', marginBottom: 6 }}>
+            {siblings.length === 0 ? 'Χωρίς μεγέθη ακόμα' : `Υπάρχοντα μεγέθη (${siblings.length})`}
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+            {siblings.map((v) => (
+              <span key={v.id} className="font-mono-meta" style={{ fontSize: 11, padding: '4px 8px', borderRadius: 8, background: 'var(--cream-200)', color: 'var(--ink-700)' }}>
+                {sizeDetailsString(v) ?? fallbackVariantLabel(v.variant_code)}
+              </span>
+            ))}
+          </div>
+        </div>
+      </Field>
+    );
+  }
+
+  return (
+    <Field label="Προϊόν" required>
+      <div style={{ position: 'relative' }}>
+        <Search size={16} style={{ position: 'absolute', left: 14, top: 15, color: 'var(--ink-300)' }} />
+        <input
+          type="search"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Αναζήτηση προϊόντος…"
+          aria-label="Αναζήτηση προϊόντος"
+          autoFocus
+          style={{
+            width: '100%', height: 46, padding: '0 14px 0 38px', background: '#fff',
+            border: '1px solid rgba(63,75,70,0.12)', borderRadius: 12, fontSize: 16, outline: 'none',
+          }}
+        />
+      </div>
+      {q.length >= 2 && (
+        <div style={{ background: '#fff', borderRadius: 14, boxShadow: 'var(--shadow-card)', overflow: 'hidden', marginTop: 8 }}>
+          {hits.length === 0 ? (
+            <p style={{ padding: '12px 14px', fontSize: 13, color: 'var(--ink-500)', margin: 0 }}>Δεν βρέθηκε. Για καινούργιο είδος χρησιμοποιήστε «Νέο προϊόν».</p>
+          ) : hits.map((p, i) => {
+            const n = pickPlantName(p);
+            return (
+              <button
+                key={p.id}
+                type="button"
+                onClick={() => { onChange(p); setQuery(''); }}
+                className="ios-tap"
+                style={{
+                  width: '100%', textAlign: 'left', padding: '11px 14px', background: 'transparent',
+                  borderTop: i > 0 ? '1px solid rgba(63,75,70,0.08)' : 0,
+                }}
+              >
+                <div style={{ fontSize: 15, fontWeight: 500, color: 'var(--ink-900)' }}>{n.primary}</div>
+                {n.secondary && <div className="font-display" style={{ fontStyle: 'italic', fontSize: 12, color: 'var(--ink-500)' }}>{n.secondary}</div>}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </Field>
   );
 }
 
@@ -373,6 +527,11 @@ function Segmented<T extends string>({ value, options, onChange }: { value: T; o
   );
 }
 
+const boxStyle = {
+  flex: 1, minWidth: 0, height: 46, padding: '0 14px', background: '#fff',
+  border: '1px solid rgba(63,75,70,0.12)', borderRadius: 12, fontSize: 16, outline: 'none',
+} as const;
+
 function NumberBox({ label, value, onChange, placeholder }: { label: string; value: number | null; onChange: (n: number | null) => void; placeholder: string }) {
   return (
     <input
@@ -387,10 +546,20 @@ function NumberBox({ label, value, onChange, placeholder }: { label: string; val
         onChange(Number.isFinite(n) && n >= 0 ? n : null);
       }}
       className="font-mono-meta"
-      style={{
-        flex: 1, minWidth: 0, height: 46, padding: '0 14px', background: '#fff', textAlign: 'center',
-        border: '1px solid rgba(63,75,70,0.12)', borderRadius: 12, fontSize: 16, outline: 'none',
-      }}
+      style={{ ...boxStyle, textAlign: 'center' }}
+    />
+  );
+}
+
+function TextBox({ label, value, onChange, placeholder }: { label: string; value: string; onChange: (v: string) => void; placeholder: string }) {
+  return (
+    <input
+      type="text"
+      aria-label={label}
+      placeholder={placeholder}
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      style={boxStyle}
     />
   );
 }
