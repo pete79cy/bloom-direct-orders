@@ -1,5 +1,5 @@
 import { Link, useNavigate } from 'react-router-dom';
-import { Bell, Check, ChevronRight, FileText, LogOut, ShoppingCart, UserPlus } from 'lucide-react';
+import { Bell, Check, ChevronRight, FileText, Leaf, LogOut, ShoppingCart, UserPlus } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useOrders, useCustomers, useQuotes } from '@/lib/queries';
 import { fmtShortDate, dayKey, localDayKey, addDays } from '@/lib/format';
@@ -154,7 +154,7 @@ export default function Home() {
       {/* Secondary: add a customer directly (also the target of the iOS
           "Add to Bloom" Shortcut, which deep-links here pre-filled from a
           phone contact). */}
-      <div style={{ padding: '10px 20px 0' }}>
+      <div style={{ padding: '10px 20px 0', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
         <Link
           to="/customers/new"
           className="ios-tap"
@@ -168,6 +168,22 @@ export default function Home() {
         >
           <UserPlus size={18} strokeWidth={1.9} />
           Νέος πελάτης
+        </Link>
+        {/* Add a catalogue item on the spot — same two Bloom calls as the
+            desktop "New Product" dialog, phone-sized form. */}
+        <Link
+          to="/products/new"
+          className="ios-tap"
+          style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+            height: 46, borderRadius: 14,
+            background: '#fff', border: '1px solid rgba(63,75,70,0.12)',
+            color: 'var(--sage-800)', fontSize: 15, fontWeight: 500,
+            textDecoration: 'none',
+          }}
+        >
+          <Leaf size={18} strokeWidth={1.9} />
+          Νέο προϊόν
         </Link>
       </div>
 
