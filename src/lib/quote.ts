@@ -187,6 +187,57 @@ export function buildQuoteUpdatePayload(
   };
 }
 
+/** Inline line edits from QuoteDetail's edit mode, keyed by quote_lines.id. */
+export interface QuoteLineEdits {
+  qty: Readonly<Record<string, number>>;
+  price: Readonly<Record<string, number>>;
+  removed: ReadonlySet<string>;
+  added: readonly DraftLine[];
+}
+
+/** True when the edits would change what is saved. */
+export function hasQuoteLineEdits(lines: readonly QuoteLine[], edits: QuoteLineEdits): boolean {
+  if (edits.removed.size > 0 || edits.added.length > 0) return true;
+  return lines.some((l) => {
+    const q = edits.qty[l.id];
+    const p = edits.price[l.id];
+    return (q !== undefined && q !== Number(l.qty)) || (p !== undefined && p !== Number(l.unit_sell_price));
+  });
+}
+
+/** Apply inline edits to the full line set for POST /api/quotes/save, which
+ *  replaces quote_lines wholesale. Untouched columns (overrides, sourcing,
+ *  alternatives) round-trip verbatim; alternatives whose line group lost
+ *  every main line go with it; line_no is renumbered the way the server
+ *  numbers the INSERT. New lines get ids that can't collide with old ones. */
+export function applyQuoteLineEdits(
+  quoteId: string,
+  lines: readonly QuoteLine[],
+  edits: QuoteLineEdits,
+  now = Date.now(),
+): QuoteLine[] {
+  const keptMain = lines.filter((l) => !l.is_alternative && !edits.removed.has(l.id));
+  const liveGroups = new Set(keptMain.map((l) => String(l.line_group_id ?? '')).filter(Boolean));
+  const kept = lines.filter((l) => {
+    if (edits.removed.has(l.id)) return false;
+    if (!l.is_alternative) return true;
+    const group = String(l.line_group_id ?? '');
+    return !group || liveGroups.has(group);
+  });
+  const edited = kept.map((l) => {
+    const copy: QuoteLine = { ...l };
+    delete copy.display;
+    if (edits.qty[l.id] !== undefined) copy.qty = edits.qty[l.id];
+    if (edits.price[l.id] !== undefined) copy.unit_sell_price = edits.price[l.id];
+    return copy;
+  });
+  const added = edits.added.map((d, i) => ({
+    ...draftLineToQuoteLine(d, quoteId, i),
+    id: `ql-${quoteId}-${now.toString(36)}-${i + 1}`,
+  }));
+  return [...edited, ...added].map((l, i) => ({ ...l, line_no: i + 1 }));
+}
+
 /** Resolve a 422 GROUP_PRICE_DEVIATIONS by stamping the operator's choice
  *  onto the deviating lines (by line_no) — exactly what the desktop
  *  GroupDeviationDialog sends back. */
