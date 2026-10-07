@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
-  applyPriceScope, buildNewQuotePayload, buildQuoteMessage, buildQuoteUpdatePayload,
+  applyPriceScope, applyQuoteLineEdits, buildNewQuotePayload, buildQuoteMessage, buildQuoteUpdatePayload,
   canTransition, displayQuoteStatus, draftLineToQuoteLine, isQuoteExpired, makeQuoteId,
-  quoteTotals, unmatchedLines, unpricedLineNos,
+  hasQuoteLineEdits, quoteTotals, unmatchedLines, unpricedLineNos,
 } from './quote';
 import { localDayKey } from './format';
 import type { DraftLine } from './draft-line';
@@ -65,6 +65,42 @@ describe('buildQuoteUpdatePayload', () => {
     expect(p.lines[0].display).toBeUndefined();
     expect(p.lines[0].offered_pot_l_override).toBe(35);
     expect(lines[0].display).toBeDefined(); // input not mutated
+  });
+});
+
+describe('applyQuoteLineEdits', () => {
+  const lines = [
+    line({ id: 'a', line_no: 1, qty: 5, unit_sell_price: 10, line_group_id: 'g1', display: {} as never, offered_pot_l_override: 35 }),
+    line({ id: 'a-alt', line_no: 2, is_alternative: true, line_group_id: 'g1' }),
+    line({ id: 'b', line_no: 3, qty: 2, unit_sell_price: 4 }),
+  ];
+  const none = { qty: {}, price: {}, removed: new Set<string>(), added: [] };
+
+  it('changes qty and price, keeps every other column, drops display', () => {
+    const out = applyQuoteLineEdits('q', lines, { ...none, qty: { a: 8 }, price: { b: 4.5 } });
+    expect(out.map((l) => [l.id, l.qty, l.unit_sell_price])).toEqual([['a', 8, 10], ['a-alt', 1, 10], ['b', 2, 4.5]]);
+    expect(out[0].offered_pot_l_override).toBe(35);
+    expect(out[0].display).toBeUndefined();
+    expect(lines[0].qty).toBe(5); // input not mutated
+  });
+
+  it('removes a line with its orphaned alternatives and renumbers', () => {
+    const out = applyQuoteLineEdits('q', lines, { ...none, removed: new Set(['a']) });
+    expect(out.map((l) => [l.id, l.line_no])).toEqual([['b', 1]]);
+  });
+
+  it('appends new lines with fresh ids', () => {
+    const out = applyQuoteLineEdits('q', lines, { ...none, added: [cat, free] }, 1000);
+    expect(out.map((l) => l.line_no)).toEqual([1, 2, 3, 4, 5]);
+    expect(out[3]).toMatchObject({ offered_variant_id: 'v-1', qty: 10, unit_sell_price: 45 });
+    expect(out[4]).toMatchObject({ offered_variant_id: null, offered_common_name_override: 'Λεβάντα' });
+    expect(new Set(out.map((l) => l.id)).size).toBe(5);
+  });
+
+  it('hasQuoteLineEdits ignores no-op edits', () => {
+    expect(hasQuoteLineEdits(lines, { ...none, qty: { a: 5 }, price: { b: 4 } })).toBe(false);
+    expect(hasQuoteLineEdits(lines, { ...none, qty: { a: 6 } })).toBe(true);
+    expect(hasQuoteLineEdits(lines, { ...none, added: [cat] })).toBe(true);
   });
 });
 
