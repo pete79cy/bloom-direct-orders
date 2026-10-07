@@ -16,6 +16,7 @@ import type {
   QuoteDetail,
 } from '@/types';
 import type { SaveQuotePayload } from './quote';
+import type { BotanicalLookup, PlantCreateBody, VariantCreateBody } from './new-product';
 
 const TEN_MIN = 10 * 60 * 1000;
 
@@ -418,5 +419,51 @@ export function useSaveQuote() {
         void qc.invalidateQueries({ queryKey: ['deliveries'] });
       }
     },
+  });
+}
+
+// ── Catalogue: «Νέο προϊόν» from the phone ─────────────────────────────────
+
+export interface CreateProductPayload {
+  plant: PlantCreateBody;
+  variant: VariantCreateBody;
+}
+
+export interface CreateProductResponse {
+  plant: Plant;
+  variant: Variant;
+}
+
+/** Same two calls as the desktop "New Product" dialog, in order. Both
+ *  endpoints return the existing row on a natural-key / variant_code match,
+ *  so re-saving the same product is harmless. */
+export function useCreateProduct() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ plant, variant }: CreateProductPayload): Promise<CreateProductResponse> => {
+      const createdPlant = await apiFetch<Plant>('/api/plants', { method: 'POST', body: JSON.stringify(plant) });
+      const createdVariant = await apiFetch<Variant>(
+        `/api/plants/${encodeURIComponent(createdPlant.id)}/variants`,
+        { method: 'POST', body: JSON.stringify(variant) },
+      );
+      return { plant: createdPlant, variant: createdVariant };
+    },
+    onSuccess: ({ plant, variant }) => {
+      // Appear in the wizard's search at once; the refetch confirms.
+      qc.setQueryData<Plant[]>(['plants'], (prev) =>
+        prev && !prev.some((p) => p.id === plant.id) ? [plant, ...prev] : prev);
+      qc.setQueryData<Variant[]>(['variants'], (prev) =>
+        prev && !prev.some((v) => v.id === variant.id) ? [variant, ...prev] : prev);
+      void qc.invalidateQueries({ queryKey: ['plants'] });
+      void qc.invalidateQueries({ queryKey: ['variants'] });
+    },
+  });
+}
+
+/** Bloom's AI botanical-name lookup (cached server side). */
+export function lookupBotanicalName(query: string): Promise<BotanicalLookup> {
+  return apiFetch<BotanicalLookup>('/api/botanical-lookup', {
+    method: 'POST',
+    body: JSON.stringify({ query }),
   });
 }

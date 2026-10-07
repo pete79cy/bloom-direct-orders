@@ -6,6 +6,7 @@ import Home from './pages/Home';
 import OrdersList from './pages/OrdersList';
 import OrderDetail from './pages/OrderDetail';
 import AddCustomerPage from './pages/AddCustomerPage';
+import AddProductPage from './pages/AddProductPage';
 import Calendar from './pages/Calendar';
 import NewOrderWizard from './pages/NewOrderWizard';
 import { lazy, Suspense } from 'react';
@@ -41,6 +42,7 @@ export default function App() {
           <Route path="/" element={<RequireAuth><Home /></RequireAuth>} />
           <Route path="/orders" element={<RequireAuth><OrdersList /></RequireAuth>} />
           <Route path="/customers/new" element={<RequireAuth><AddCustomerPage /></RequireAuth>} />
+          <Route path="/products/new" element={<RequireAuth><AddProductPage /></RequireAuth>} />
           <Route path="/orders/new" element={<RequireAuth><NewOrderWizard key="order" mode="order" /></RequireAuth>} />
           <Route path="/orders/:id" element={<RequireAuth><OrderDetail /></RequireAuth>} />
           <Route path="/calendar" element={<RequireAuth><Calendar /></RequireAuth>} />
