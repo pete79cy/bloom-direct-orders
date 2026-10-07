@@ -460,6 +460,24 @@ export function useCreateProduct() {
   });
 }
 
+/** «Νέο υποπροϊόν»: one more size of an existing product — the second of
+ *  the two calls above, on its own. */
+export function useCreateVariant() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ plantId, variant }: { plantId: string; variant: VariantCreateBody }) =>
+      apiFetch<Variant>(`/api/plants/${encodeURIComponent(plantId)}/variants`, {
+        method: 'POST',
+        body: JSON.stringify(variant),
+      }),
+    onSuccess: (variant) => {
+      qc.setQueryData<Variant[]>(['variants'], (prev) =>
+        prev && !prev.some((v) => v.id === variant.id) ? [variant, ...prev] : prev);
+      void qc.invalidateQueries({ queryKey: ['variants'] });
+    },
+  });
+}
+
 /** Bloom's AI botanical-name lookup (cached server side). */
 export function lookupBotanicalName(query: string): Promise<BotanicalLookup> {
   return apiFetch<BotanicalLookup>('/api/botanical-lookup', {

@@ -59,6 +59,8 @@ export interface Plant {
   /** Optional for backward-compatibility with cached payloads pre-dating
    *  the status migration. Defaults to 'active' at the server. */
   status?: CatalogueStatus;
+  /** 'plant' | 'pot' | 'other'; older cached rows may lack it (= plant). */
+  product_kind?: 'plant' | 'pot' | 'other' | null;
 }
 
 export interface Variant {

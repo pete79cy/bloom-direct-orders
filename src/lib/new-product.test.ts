@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   EMPTY_PRODUCT_FORM, botanicalCandidates, buildPlantBody, buildVariantBody, describeProductSize,
-  generatePlantCode, transliterateGreek, validateProductForm, type NewProductForm,
+  generatePlantCode, transliterateGreek, validateProductForm, validateSubproductForm, type NewProductForm,
 } from './new-product';
 
 const lavender: NewProductForm = {
@@ -82,5 +82,32 @@ describe('display', () => {
         alternatives: [{ scientific_name: 'Nerium oleander' }, { scientific_name: 'Laurus nobilis' }],
       },
     })).toEqual(['Laurus nobilis', 'Nerium oleander']);
+  });
+});
+
+describe('sub-product (variant of an existing product)', () => {
+  const parentPlant = { scientific_name: 'Olea europaea', product_kind: 'plant' as const };
+  const parentPot = { scientific_name: 'Γλάστρα Τερακότα', product_kind: 'pot' as const };
+  const specs: NewProductForm = { ...EMPTY_PRODUCT_FORM, plantType: 'TREE', potVolumeL: 35, heightMinCm: 150, heightMaxCm: 175 };
+
+  it('takes the parent name and kind, ignores the form name', () => {
+    expect(buildVariantBody({ ...specs, commonName: 'ignored' }, parentPlant).variant_code)
+      .toBe('OLEA-EUROPAEA__TREE__OTHER__P35L__H150-175');
+  });
+  it('pot attributes build the desktop suffix and are sent', () => {
+    const v = buildVariantBody({ ...EMPTY_PRODUCT_FORM, attributes: { diameter_cm: 30, height_cm: null, material: 'Τερακότα', color: '' } }, parentPot);
+    expect(v.variant_code).toBe('POT-GLASTRA-TERAKOTA__D30__TERAKOTA');
+    expect(v.attributes).toEqual({ diameter_cm: 30, material: 'Τερακότα' });
+  });
+  it('validateSubproductForm: parent, specs, then duplicate size', () => {
+    expect(validateSubproductForm(specs, null, [])).toMatch(/προϊόν/);
+    expect(validateSubproductForm({ ...specs, potVolumeL: null }, parentPlant, [])).toMatch(/γλάστρας/);
+    expect(validateSubproductForm(specs, parentPlant, ['OLEA-EUROPAEA__TREE__OTHER__P35L__H150-175'])).toMatch(/υπάρχει/);
+    expect(validateSubproductForm(specs, parentPlant, [])).toBeNull();
+    expect(validateSubproductForm(EMPTY_PRODUCT_FORM, parentPot, [])).toBeNull();
+  });
+  it('describeProductSize for a pot', () => {
+    expect(describeProductSize({ ...EMPTY_PRODUCT_FORM, attributes: { diameter_cm: 30, height_cm: 25, material: 'Τερακότα', color: '' } }, 'pot'))
+      .toBe('Ø 30 CM · H 25 CM · Τερακότα');
   });
 });

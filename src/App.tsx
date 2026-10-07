@@ -43,6 +43,7 @@ export default function App() {
           <Route path="/orders" element={<RequireAuth><OrdersList /></RequireAuth>} />
           <Route path="/customers/new" element={<RequireAuth><AddCustomerPage /></RequireAuth>} />
           <Route path="/products/new" element={<RequireAuth><AddProductPage /></RequireAuth>} />
+          <Route path="/products/new/size" element={<RequireAuth><AddProductPage mode="subproduct" /></RequireAuth>} />
           <Route path="/orders/new" element={<RequireAuth><NewOrderWizard key="order" mode="order" /></RequireAuth>} />
           <Route path="/orders/:id" element={<RequireAuth><OrderDetail /></RequireAuth>} />
           <Route path="/calendar" element={<RequireAuth><Calendar /></RequireAuth>} />
