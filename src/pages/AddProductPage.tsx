@@ -6,18 +6,18 @@ import CustomerFormField from '@/components/CustomerFormField';
 import PriceInput from '@/components/PriceInput';
 import VatPicker from '@/components/VatPicker';
 import {
-  lookupBotanicalName, useCreateProduct, useCreateVariant, usePlants, useVariants,
+  lookupBotanicalName, useCreateProduct, useCreateVariant, usePlants, useSuppliers, useVariants,
 } from '@/lib/queries';
 import {
-  COMMON_POT_SIZES_L, EMPTY_PRODUCT_FORM, PLANT_TYPE_LABEL, PRODUCT_KIND_LABEL, botanicalCandidates,
-  buildPlantBody, buildVariantBody, describeProductSize, validateProductForm, validateSubproductForm,
-  type NewProductForm, type PlantType, type ProductKind,
+  COMMON_POT_SIZES_L, EMPTY_PRODUCT_FORM, PLANT_FORM_LABEL, PLANT_TYPE_LABEL, PRODUCT_KIND_LABEL, botanicalCandidates,
+  buildPlantBody, buildSupplierLink, buildVariantBody, describeProductSize, inheritedSpecs, validateProductForm,
+  validateSubproductForm, type NewProductForm, type PlantForm, type PlantType, type ProductKind,
 } from '@/lib/new-product';
 import { fmtEUR } from '@/lib/format';
 import { pickPlantName, sizeDetailsString, fallbackVariantLabel } from '@/lib/plant-display';
 import { normalizeForSearch } from '@/lib/search';
 import type { DuplicateSeed } from '@/pages/NewOrderWizard';
-import type { Plant, Variant } from '@/types';
+import type { Plant, Supplier, Variant } from '@/types';
 
 export type AddProductMode = 'product' | 'subproduct';
 
@@ -41,6 +41,7 @@ export default function AddProductPage({ mode = 'product' }: { mode?: AddProduct
   const sub = mode === 'subproduct';
   const { data: plants = [] } = usePlants();
   const { data: variants = [] } = useVariants();
+  const { data: suppliers = [] } = useSuppliers();
 
   const [form, setForm] = useState<NewProductForm>(EMPTY_PRODUCT_FORM);
   const [parent, setParent] = useState<Plant | null>(null);
@@ -65,6 +66,17 @@ export default function AddProductPage({ mode = 'product' }: { mode?: AddProduct
     ? validateSubproductForm(form, parent, siblings.map((v) => v.variant_code))
     : validateProductForm(form);
   const saving = createProduct.isPending || createVariant.isPending;
+  const supplier = form.supplierId ? suppliers.find((s) => s.id === form.supplierId) ?? null : null;
+  const margin = form.supplierCost != null && form.supplierCost > 0 && form.unitPrice > 0
+    ? ((form.unitPrice - form.supplierCost) / form.supplierCost) * 100
+    : null;
+
+  /** Pick a product for a sub-product: its siblings' type/form carry over. */
+  function chooseParent(p: Plant | null) {
+    setParent(p);
+    const inherited = p ? inheritedSpecs(variants.filter((v) => v.plant_id === p.id)) : null;
+    setForm((f) => ({ ...EMPTY_PRODUCT_FORM, unitPrice: f.unitPrice, vatRate: f.vatRate, supplierId: f.supplierId, ...(inherited ?? {}) }));
+  }
 
   async function onLookup() {
     const q = form.commonName.trim();
@@ -94,16 +106,29 @@ export default function AddProductPage({ mode = 'product' }: { mode?: AddProduct
       return;
     }
     try {
+      let supplierLinked = true;
       if (sub && parent) {
-        const v = await createVariant.mutateAsync({ plantId: parent.id, variant: buildVariantBody(form, parent) });
+        const res = await createVariant.mutateAsync({
+          plantId: parent.id,
+          variant: buildVariantBody(form, parent),
+          supplier: (variantId) => buildSupplierLink(form, variantId, parent),
+        });
+        supplierLinked = res.supplierLinked;
         const n = pickPlantName(parent);
-        setCreated({ variantId: v.id, name: n.primary, botanical: n.secondary });
+        setCreated({ variantId: res.variant.id, name: n.primary, botanical: n.secondary });
         toast.success('Το μέγεθος προστέθηκε στο προϊόν');
       } else {
-        const res = await createProduct.mutateAsync({ plant: buildPlantBody(form), variant: buildVariantBody(form) });
+        const plantBody = buildPlantBody(form);
+        const res = await createProduct.mutateAsync({
+          plant: plantBody,
+          variant: buildVariantBody(form),
+          supplier: (variantId) => buildSupplierLink(form, variantId, plantBody),
+        });
+        supplierLinked = res.supplierLinked;
         setCreated({ variantId: res.variant.id, name: form.commonName.trim(), botanical: form.scientificName.trim() || null });
         toast.success('Το προϊόν προστέθηκε στον κατάλογο');
       }
+      if (!supplierLinked) toast.error('Αποθηκεύτηκε, αλλά ο προμηθευτής / η τιμή αγοράς δεν καταχωρίστηκαν. Συμπληρώστε τα από το Bloom.');
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Αποτυχία δημιουργίας');
     }
@@ -119,10 +144,10 @@ export default function AddProductPage({ mode = 'product' }: { mode?: AddProduct
   }
 
   function reset(keepParent: boolean) {
-    setForm(EMPTY_PRODUCT_FORM);
     setSuggestions([]);
     setCreated(null);
-    if (!keepParent) setParent(null);
+    if (keepParent) chooseParent(parent);
+    else { setParent(null); setForm(EMPTY_PRODUCT_FORM); }
   }
 
   const title = sub ? 'Νέο υποπροϊόν' : 'Νέο προϊόν';
@@ -172,6 +197,11 @@ export default function AddProductPage({ mode = 'product' }: { mode?: AddProduct
               <div className="font-mono-meta" style={{ fontSize: 12, color: 'var(--ink-500)', marginTop: 2 }}>
                 {[sizeLine, form.unitPrice > 0 ? fmtEUR(form.unitPrice) : null].filter(Boolean).join(' · ') || PRODUCT_KIND_LABEL[kind]}
               </div>
+              {supplier && (
+                <div className="font-mono-meta" style={{ fontSize: 12, color: 'var(--ink-500)', marginTop: 2 }}>
+                  {supplier.trading_name || supplier.name}{form.supplierCost != null ? ` · κόστος ${fmtEUR(form.supplierCost)}` : ''}
+                </div>
+              )}
             </div>
           </div>
 
@@ -204,7 +234,7 @@ export default function AddProductPage({ mode = 'product' }: { mode?: AddProduct
         <>
           <div style={{ flex: 1, overflowY: 'auto', padding: '12px 20px 24px' }}>
             {sub ? (
-              <ParentPicker plants={plants} value={parent} onChange={(p) => { setParent(p); setForm((f) => ({ ...EMPTY_PRODUCT_FORM, unitPrice: f.unitPrice, vatRate: f.vatRate })); }} siblings={siblings} />
+              <ParentPicker plants={plants} value={parent} onChange={chooseParent} siblings={siblings} />
             ) : (
               <>
                 <Segmented<ProductKind>
@@ -320,33 +350,81 @@ export default function AddProductPage({ mode = 'product' }: { mode?: AddProduct
                   </Field>
                 )}
 
+                {/* Sourcing — who supplies it and at what cost, as on desktop. */}
+                <SupplierPicker
+                  suppliers={suppliers}
+                  value={supplier}
+                  onChange={(s) => setForm((f) => ({ ...f, supplierId: s?.id ?? null, ...(s ? {} : { supplierSku: '', supplierCost: null }) }))}
+                />
+                {supplier && (
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
+                    <Field label="Τιμή αγοράς" compact>
+                      <PriceInput value={form.supplierCost ?? 0} onChange={(n) => set('supplierCost', n > 0 ? n : null)} />
+                    </Field>
+                    <Field label="Κωδικός προμηθευτή" hint="SKU" compact>
+                      <TextBox label="Κωδικός προμηθευτή" value={form.supplierSku} onChange={(v) => set('supplierSku', v)} placeholder="προαιρετικό" />
+                    </Field>
+                  </div>
+                )}
+
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 12, alignItems: 'end', marginBottom: 16 }}>
                   <Field label="Τιμή πώλησης" hint="προαιρετικό" compact>
-                    <PriceInput value={form.unitPrice} onChange={(n) => set('unitPrice', n)} />
+                    <PriceInput
+                      value={form.unitPrice}
+                      onChange={(n) => set('unitPrice', n)}
+                      warn={margin != null && margin < 0}
+                      hint={margin != null ? `περιθώριο ${margin >= 0 ? '+' : ''}${margin.toFixed(0)}% επί ${fmtEUR(form.supplierCost ?? 0)}` : undefined}
+                      hintColor={margin != null && margin < 0 ? 'var(--clay)' : undefined}
+                    />
                   </Field>
                   <Field label="ΦΠΑ" compact>
                     <VatPicker value={form.vatRate} onChange={(r) => set('vatRate', r)} />
                   </Field>
                 </div>
 
-                {isPlant && !more && (
+                {!more && (
                   <button type="button" onClick={() => setMore(true)} style={{ fontSize: 14, color: 'var(--sage-700)', fontWeight: 500, background: 'transparent', padding: '4px 0' }}>
-                    Περισσότερα (τύπος φυτού{sub ? '' : ', σημείωση'})
+                    {isPlant ? 'Περισσότερα (τύπος, μορφή, τεμάχια, περίμετρος, ποιότητα, σημείωση)' : 'Περισσότερα (σημείωση)'}
                   </button>
                 )}
-                {(more || !isPlant) && (
+                {more && (
                   <>
                     {isPlant && (
-                      <Field label="Τύπος φυτού">
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                          {(Object.keys(PLANT_TYPE_LABEL) as PlantType[]).map((t) => (
-                            <Chip key={t} active={form.plantType === t} onClick={() => set('plantType', t)}>{PLANT_TYPE_LABEL[t]}</Chip>
-                          ))}
+                      <>
+                        <Field label="Τύπος φυτού">
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                            {(Object.keys(PLANT_TYPE_LABEL) as PlantType[]).map((t) => (
+                              <Chip key={t} active={form.plantType === t} onClick={() => set('plantType', t)}>{PLANT_TYPE_LABEL[t]}</Chip>
+                            ))}
+                          </div>
+                        </Field>
+                        <Field label="Μορφή">
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                            {(Object.keys(PLANT_FORM_LABEL) as PlantForm[]).map((t) => (
+                              <Chip key={t} active={form.form === t} onClick={() => set('form', t)}>{PLANT_FORM_LABEL[t]}</Chip>
+                            ))}
+                          </div>
+                        </Field>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                          <Field label="Τεμάχια / γλάστρα" hint="προαιρετικό">
+                            <NumberBox label="Τεμάχια ανά γλάστρα" value={form.pcsPerPot} onChange={(n) => set('pcsPerPot', n)} placeholder="π.χ. 3" />
+                          </Field>
+                          <Field label="Ποιότητα" hint="grade">
+                            <TextBox label="Ποιότητα" value={form.grade} onChange={(v) => set('grade', v)} placeholder="π.χ. A" />
+                          </Field>
                         </div>
-                      </Field>
+                        <Field label="Περίμετρος κορμού (cm)" hint="προαιρετικό">
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <NumberBox label="Περίμετρος από" value={form.girthMinCm} onChange={(n) => set('girthMinCm', n)} placeholder="από" />
+                            <span style={{ color: 'var(--ink-300)' }}>–</span>
+                            <NumberBox label="Περίμετρος έως" value={form.girthMaxCm} onChange={(n) => set('girthMaxCm', n)} placeholder="έως" />
+                          </div>
+                        </Field>
+                      </>
                     )}
+                    <CustomerFormField label="Σημείωση μεγέθους" value={form.variantNote} onChange={(v) => set('variantNote', v)} placeholder="π.χ. χωρίς γλάστρα" />
                     {!sub && (
-                      <CustomerFormField label="Σημείωση" value={form.notes} onChange={(v) => set('notes', v)} placeholder="π.χ. μόνο κατόπιν παραγγελίας" />
+                      <CustomerFormField label="Σημείωση προϊόντος" value={form.notes} onChange={(v) => set('notes', v)} placeholder="π.χ. μόνο κατόπιν παραγγελίας" />
                     )}
                   </>
                 )}
@@ -462,6 +540,64 @@ function ParentPicker({
               </button>
             );
           })}
+        </div>
+      )}
+    </Field>
+  );
+}
+
+/** Supplier as tap chips when the list is short, search-as-you-type when
+ *  it isn't; the chosen one shows as a card with ×. */
+function SupplierPicker({ suppliers, value, onChange }: { suppliers: Supplier[]; value: Supplier | null; onChange: (s: Supplier | null) => void }) {
+  const [query, setQuery] = useState('');
+  const sorted = useMemo(
+    () => [...suppliers].sort((a, b) => (a.trading_name || a.name).localeCompare(b.trading_name || b.name, 'el')),
+    [suppliers],
+  );
+  const q = normalizeForSearch(query.trim());
+  const hits = q ? sorted.filter((s) => normalizeForSearch(`${s.name} ${s.trading_name ?? ''}`).includes(q)).slice(0, 8) : sorted;
+  const name = (s: Supplier) => s.trading_name || s.name;
+
+  if (value) {
+    return (
+      <Field label="Προμηθευτής">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: '#fff', borderRadius: 12, border: '1px solid rgba(63,75,70,0.12)', padding: '8px 8px 8px 14px' }}>
+          <span style={{ flex: 1, fontSize: 15, fontWeight: 500, color: 'var(--ink-900)' }}>{name(value)}</span>
+          <button
+            type="button"
+            onClick={() => onChange(null)}
+            aria-label="Αφαίρεση προμηθευτή"
+            className="ios-tap"
+            style={{ width: 30, height: 30, borderRadius: 999, background: 'var(--cream-200)', color: 'var(--ink-700)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
+          >
+            <X size={15} />
+          </button>
+        </div>
+      </Field>
+    );
+  }
+
+  if (sorted.length === 0) return null;
+  return (
+    <Field label="Προμηθευτής" hint="προαιρετικό">
+      {sorted.length > 6 && (
+        <div style={{ position: 'relative', marginBottom: 8 }}>
+          <Search size={16} style={{ position: 'absolute', left: 14, top: 15, color: 'var(--ink-300)' }} />
+          <input
+            type="search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Αναζήτηση προμηθευτή…"
+            aria-label="Αναζήτηση προμηθευτή"
+            style={{ ...boxStyle, width: '100%', paddingLeft: 38 }}
+          />
+        </div>
+      )}
+      {(sorted.length <= 6 || q) && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+          {hits.length === 0
+            ? <span style={{ fontSize: 13, color: 'var(--ink-500)' }}>Δεν βρέθηκε προμηθευτής.</span>
+            : hits.map((s) => <Chip key={s.id} active={false} onClick={() => { onChange(s); setQuery(''); }}>{name(s)}</Chip>)}
         </div>
       )}
     </Field>
