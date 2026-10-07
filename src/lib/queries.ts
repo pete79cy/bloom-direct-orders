@@ -16,7 +16,7 @@ import type {
   QuoteDetail,
 } from '@/types';
 import type { SaveQuotePayload } from './quote';
-import type { BotanicalLookup, PlantCreateBody, VariantCreateBody } from './new-product';
+import type { BotanicalLookup, PlantCreateBody, SupplierLinkBodies, VariantCreateBody } from './new-product';
 
 const TEN_MIN = 10 * 60 * 1000;
 
@@ -422,59 +422,94 @@ export function useSaveQuote() {
   });
 }
 
-// ── Catalogue: «Νέο προϊόν» from the phone ─────────────────────────────────
+// ── Catalogue: «Νέο προϊόν» / «Νέο υποπροϊόν» from the phone ───────────────
 
 export interface CreateProductPayload {
   plant: PlantCreateBody;
   variant: VariantCreateBody;
+  /** Built by the caller once the variant id is known. */
+  supplier?: (variantId: string) => SupplierLinkBodies | null;
 }
 
 export interface CreateProductResponse {
   plant: Plant;
   variant: Variant;
+  /** False when the variant saved but the supplier link / cost did not. */
+  supplierLinked: boolean;
 }
 
-/** Same two calls as the desktop "New Product" dialog, in order. Both
- *  endpoints return the existing row on a natural-key / variant_code match,
- *  so re-saving the same product is harmless. */
+/** Desktop's optional third and fourth calls: link the variant to a supplier,
+ *  then record its cost. Best-effort, as on desktop — the variant exists
+ *  already; the caller tells the user when this part failed. */
+async function linkSupplier(link: SupplierLinkBodies | null): Promise<boolean> {
+  if (!link) return true;
+  try {
+    const sp = await apiFetch<SupplierProduct>('/api/supplier-products', { method: 'POST', body: JSON.stringify(link.product) });
+    if (link.price) {
+      await apiFetch('/api/supplier-prices', {
+        method: 'POST',
+        body: JSON.stringify({ ...link.price, supplier_product_id: sp.id }),
+      });
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function invalidateCatalogue(qc: ReturnType<typeof useQueryClient>, plant: Plant | null, variant: Variant) {
+  if (plant) {
+    qc.setQueryData<Plant[]>(['plants'], (prev) =>
+      prev && !prev.some((p) => p.id === plant.id) ? [plant, ...prev] : prev);
+    void qc.invalidateQueries({ queryKey: ['plants'] });
+  }
+  // Appear in the wizard's search at once; the refetch confirms.
+  qc.setQueryData<Variant[]>(['variants'], (prev) =>
+    prev && !prev.some((v) => v.id === variant.id) ? [variant, ...prev] : prev);
+  void qc.invalidateQueries({ queryKey: ['variants'] });
+  void qc.invalidateQueries({ queryKey: ['supplier-products'] });
+  void qc.invalidateQueries({ queryKey: ['supplier-prices'] });
+}
+
+/** Same calls as the desktop "New Product" dialog, in order. Plant and
+ *  variant endpoints return the existing row on a natural-key /
+ *  variant_code match, so re-saving the same product is harmless. */
 export function useCreateProduct() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async ({ plant, variant }: CreateProductPayload): Promise<CreateProductResponse> => {
+    mutationFn: async ({ plant, variant, supplier }: CreateProductPayload): Promise<CreateProductResponse> => {
       const createdPlant = await apiFetch<Plant>('/api/plants', { method: 'POST', body: JSON.stringify(plant) });
       const createdVariant = await apiFetch<Variant>(
         `/api/plants/${encodeURIComponent(createdPlant.id)}/variants`,
         { method: 'POST', body: JSON.stringify(variant) },
       );
-      return { plant: createdPlant, variant: createdVariant };
+      const supplierLinked = await linkSupplier(supplier?.(createdVariant.id) ?? null);
+      return { plant: createdPlant, variant: createdVariant, supplierLinked };
     },
-    onSuccess: ({ plant, variant }) => {
-      // Appear in the wizard's search at once; the refetch confirms.
-      qc.setQueryData<Plant[]>(['plants'], (prev) =>
-        prev && !prev.some((p) => p.id === plant.id) ? [plant, ...prev] : prev);
-      qc.setQueryData<Variant[]>(['variants'], (prev) =>
-        prev && !prev.some((v) => v.id === variant.id) ? [variant, ...prev] : prev);
-      void qc.invalidateQueries({ queryKey: ['plants'] });
-      void qc.invalidateQueries({ queryKey: ['variants'] });
-    },
+    onSuccess: ({ plant, variant }) => invalidateCatalogue(qc, plant, variant),
   });
 }
 
-/** «Νέο υποπροϊόν»: one more size of an existing product — the second of
- *  the two calls above, on its own. */
+export interface CreateVariantPayload {
+  plantId: string;
+  variant: VariantCreateBody;
+  supplier?: (variantId: string) => SupplierLinkBodies | null;
+}
+
+/** «Νέο υποπροϊόν»: one more size of an existing product — the desktop
+ *  "New Subproduct": variant, then the optional supplier link. */
 export function useCreateVariant() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ plantId, variant }: { plantId: string; variant: VariantCreateBody }) =>
-      apiFetch<Variant>(`/api/plants/${encodeURIComponent(plantId)}/variants`, {
+    mutationFn: async ({ plantId, variant, supplier }: CreateVariantPayload): Promise<{ variant: Variant; supplierLinked: boolean }> => {
+      const created = await apiFetch<Variant>(`/api/plants/${encodeURIComponent(plantId)}/variants`, {
         method: 'POST',
         body: JSON.stringify(variant),
-      }),
-    onSuccess: (variant) => {
-      qc.setQueryData<Variant[]>(['variants'], (prev) =>
-        prev && !prev.some((v) => v.id === variant.id) ? [variant, ...prev] : prev);
-      void qc.invalidateQueries({ queryKey: ['variants'] });
+      });
+      const supplierLinked = await linkSupplier(supplier?.(created.id) ?? null);
+      return { variant: created, supplierLinked };
     },
+    onSuccess: ({ variant }) => invalidateCatalogue(qc, null, variant),
   });
 }
 

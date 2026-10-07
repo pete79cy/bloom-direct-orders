@@ -12,7 +12,8 @@
 import type { VatRate } from './vat';
 
 export type ProductKind = 'plant' | 'pot' | 'other';
-export type PlantType = 'TREE' | 'SHRUB' | 'PALM' | 'PERENNIAL' | 'GRASS' | 'CLIMBER' | 'OTHER';
+export type PlantType = 'TREE' | 'SHRUB' | 'PALM' | 'PERENNIAL' | 'GRASS' | 'CLIMBER' | 'STEM' | 'OTHER';
+export type PlantForm = 'BUSH' | 'CLUMP' | 'STEM' | 'SINGLE_STEM' | 'MULTI_STEM' | 'STANDARD_STEM' | 'OTHER';
 
 export const PRODUCT_KIND_LABEL: Record<ProductKind, string> = {
   plant: 'Φυτό',
@@ -27,6 +28,17 @@ export const PLANT_TYPE_LABEL: Record<PlantType, string> = {
   PERENNIAL: 'Πολυετές',
   GRASS: 'Γρασίδι',
   CLIMBER: 'Αναρριχώμενο',
+  STEM: 'Κορμός',
+  OTHER: 'Άλλο',
+};
+
+export const PLANT_FORM_LABEL: Record<PlantForm, string> = {
+  BUSH: 'Θάμνος',
+  CLUMP: 'Συστάδα',
+  STEM: 'Κορμός',
+  SINGLE_STEM: 'Μονός κορμός',
+  MULTI_STEM: 'Πολύκορμο',
+  STANDARD_STEM: 'Standard',
   OTHER: 'Άλλο',
 };
 
@@ -73,13 +85,25 @@ export interface NewProductForm {
   scientificName: string;
   kind: ProductKind;
   plantType: PlantType;
+  form: PlantForm;
+  pcsPerPot: number | null;
   potVolumeL: number | null;
   heightMinCm: number | null;
   heightMaxCm: number | null;
+  girthMinCm: number | null;
+  girthMaxCm: number | null;
+  grade: string;
   attributes: NonPlantAttributes;
+  /** Variant note (desktop "Variant Notes"), e.g. «χωρίς γλάστρα». */
+  variantNote: string;
   unitPrice: number;
   vatRate: VatRate;
+  /** Plant note (desktop "notes" on the product) — new product only. */
   notes: string;
+  /** Optional sourcing: who supplies it and at what cost. */
+  supplierId: string | null;
+  supplierSku: string;
+  supplierCost: number | null;
 }
 
 /** The product a new sub-product (variant) hangs off. */
@@ -93,14 +117,43 @@ export const EMPTY_PRODUCT_FORM: NewProductForm = {
   scientificName: '',
   kind: 'plant',
   plantType: 'SHRUB',
+  form: 'BUSH',
+  pcsPerPot: null,
   potVolumeL: null,
   heightMinCm: null,
   heightMaxCm: null,
+  girthMinCm: null,
+  girthMaxCm: null,
+  grade: '',
   attributes: { diameter_cm: null, height_cm: null, material: '', color: '' },
+  variantNote: '',
   unitPrice: 0,
   vatRate: 19,
   notes: '',
+  supplierId: null,
+  supplierSku: '',
+  supplierCost: null,
 };
+
+/** Type/form most of a product's existing sizes share — a sub-product almost
+ *  always matches its siblings, so the picker pre-fills them. */
+export function inheritedSpecs(
+  siblings: readonly { plant_type?: string | null; form?: string | null }[],
+): Pick<NewProductForm, 'plantType' | 'form'> | null {
+  if (siblings.length === 0) return null;
+  const mode = <T extends string>(values: (string | null | undefined)[], allowed: readonly T[], fallback: T): T => {
+    const counts = new Map<string, number>();
+    for (const v of values) if (v && (allowed as readonly string[]).includes(v)) counts.set(v, (counts.get(v) ?? 0) + 1);
+    let best: T = fallback;
+    let n = 0;
+    for (const [v, c] of counts) if (c > n) { best = v as T; n = c; }
+    return best;
+  };
+  return {
+    plantType: mode(siblings.map((s) => s.plant_type), Object.keys(PLANT_TYPE_LABEL) as PlantType[], 'SHRUB'),
+    form: mode(siblings.map((s) => s.form), Object.keys(PLANT_FORM_LABEL) as PlantForm[], 'BUSH'),
+  };
+}
 
 /** First blocking problem with the size/spec fields, or null. `kind` is the
  *  parent's kind for a sub-product, the form's for a new product. */
@@ -111,7 +164,11 @@ export function validateSpecs(f: NewProductForm, kind: ProductKind = f.kind): st
     const max = f.heightMaxCm;
     if ((min == null) !== (max == null)) return 'Συμπληρώστε και τα δύο όρια ύψους.';
     if (min != null && max != null && (min < 0 || max < min)) return 'Το ύψος «έως» πρέπει να είναι ≥ «από».';
+    if ((f.girthMinCm == null) !== (f.girthMaxCm == null)) return 'Συμπληρώστε και τα δύο όρια περιμέτρου.';
+    if (f.girthMinCm != null && f.girthMaxCm != null && (f.girthMinCm < 0 || f.girthMaxCm < f.girthMinCm)) return 'Η περίμετρος «έως» πρέπει να είναι ≥ «από».';
+    if (f.pcsPerPot != null && f.pcsPerPot < 1) return 'Τα τεμάχια ανά γλάστρα πρέπει να είναι ≥ 1.';
   }
+  if (f.supplierCost != null && !f.supplierId) return 'Διαλέξτε προμηθευτή για την τιμή αγοράς.';
   return null;
 }
 
@@ -147,12 +204,23 @@ export interface PlantCreateBody {
 export interface VariantCreateBody {
   variant_code: string;
   plant_type: PlantType | 'OTHER';
-  form: 'OTHER';
+  form: PlantForm | 'OTHER';
+  pcs_per_pot: number | null;
   pot_volume_l: number;
   height_min_cm: number;
   height_max_cm: number;
+  girth_min_cm: number | null;
+  girth_max_cm: number | null;
+  grade: string;
+  note: string;
   unit_of_measure: 'POT';
   attributes: Record<string, string | number>;
+}
+
+/** The desktop's optional third and fourth calls after the variant. */
+export interface SupplierLinkBodies {
+  product: { supplier_id: string; variant_id: string; supplier_sku: string; supplier_name_text: string };
+  price: { cost_price: number; currency: 'EUR' } | null;
 }
 
 /** The desktop stores an unknown height as 1–1; sizeDetails() hides it. */
@@ -201,9 +269,14 @@ export function buildVariantBody(f: NewProductForm, parent?: ParentProduct): Var
       variant_code: [slug ? `${prefix}-${slug}` : prefix, ...suffix].join('__'),
       plant_type: 'OTHER',
       form: 'OTHER',
+      pcs_per_pot: null,
       pot_volume_l: 0,
       height_min_cm: 0,
       height_max_cm: 0,
+      girth_min_cm: null,
+      girth_max_cm: null,
+      grade: '',
+      note: f.variantNote.trim(),
       unit_of_measure: 'POT',
       attributes,
     };
@@ -211,18 +284,56 @@ export function buildVariantBody(f: NewProductForm, parent?: ParentProduct): Var
   const pot = f.potVolumeL ?? 0;
   const hMin = f.heightMinCm ?? UNKNOWN_HEIGHT;
   const hMax = f.heightMaxCm ?? UNKNOWN_HEIGHT;
-  const code = [generatePlantCode(base.scientific_name), f.plantType, 'OTHER', `P${pot}L`, `H${hMin}-${hMax}`]
-    .filter(Boolean)
-    .join('__');
+  const grade = f.grade.trim();
+  const parts = [
+    generatePlantCode(base.scientific_name),
+    f.plantType,
+    f.form,
+    f.pcsPerPot != null && f.pcsPerPot > 0 ? `${f.pcsPerPot}PC` : '',
+    `P${pot}L`,
+    `H${hMin}-${hMax}`,
+  ].filter(Boolean);
+  if (f.girthMinCm != null && f.girthMaxCm != null) parts.push(`G${f.girthMinCm}-${f.girthMaxCm}`);
+  if (grade) parts.push(grade.toUpperCase());
   return {
-    variant_code: code,
+    variant_code: parts.join('__'),
     plant_type: f.plantType,
-    form: 'OTHER',
+    form: f.form,
+    pcs_per_pot: f.pcsPerPot,
     pot_volume_l: pot,
     height_min_cm: hMin,
     height_max_cm: hMax,
+    girth_min_cm: f.girthMinCm,
+    girth_max_cm: f.girthMaxCm,
+    grade,
+    note: f.variantNote.trim(),
     unit_of_measure: 'POT',
     attributes: {},
+  };
+}
+
+/** Supplier link + cost for the created variant, or null when no supplier
+ *  was chosen. supplier_name_text follows the desktop default:
+ *  "common - scientific - Pot 5L - Height 20-40 cm". */
+export function buildSupplierLink(
+  f: NewProductForm,
+  variantId: string,
+  names: { common_name?: string | null; scientific_name: string },
+): SupplierLinkBodies | null {
+  if (!f.supplierId) return null;
+  const spec = [
+    f.potVolumeL != null ? `Pot ${f.potVolumeL}L` : null,
+    f.heightMinCm != null && f.heightMaxCm != null ? `Height ${f.heightMinCm}-${f.heightMaxCm} cm` : null,
+    f.girthMinCm != null && f.girthMaxCm != null ? `Girth ${f.girthMinCm}-${f.girthMaxCm} cm` : null,
+  ].filter(Boolean).join(' - ');
+  return {
+    product: {
+      supplier_id: f.supplierId,
+      variant_id: variantId,
+      supplier_sku: f.supplierSku.trim(),
+      supplier_name_text: [names.common_name?.trim(), names.scientific_name.trim(), spec].filter(Boolean).join(' - '),
+    },
+    price: f.supplierCost != null && f.supplierCost >= 0 ? { cost_price: f.supplierCost, currency: 'EUR' } : null,
   };
 }
 
@@ -243,6 +354,11 @@ export function describeProductSize(f: NewProductForm, kind: ProductKind = f.kin
   if (f.heightMinCm != null && f.heightMaxCm != null) {
     parts.push(f.heightMinCm === f.heightMaxCm ? `H ${f.heightMinCm} CM` : `H ${f.heightMinCm}–${f.heightMaxCm} CM`);
   }
+  if (f.girthMinCm != null && f.girthMaxCm != null) {
+    parts.push(f.girthMinCm === f.girthMaxCm ? `G ${f.girthMinCm} CM` : `G ${f.girthMinCm}–${f.girthMaxCm} CM`);
+  }
+  if (f.pcsPerPot != null && f.pcsPerPot > 1) parts.push(`${f.pcsPerPot} τεμ.`);
+  if (f.grade.trim()) parts.push(f.grade.trim().toUpperCase());
   return parts.join(' · ');
 }
 
