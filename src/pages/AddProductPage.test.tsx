@@ -73,6 +73,9 @@ describe('AddProductPage — subproduct', () => {
     expect(screen.getByText('Αυτό το μέγεθος υπάρχει ήδη.')).toBeTruthy();
 
     fireEvent.click(screen.getByRole('button', { name: '50L' }));
+    // Girth is on the main form, not behind «Περισσότερα».
+    fireEvent.change(screen.getByLabelText('Περίμετρος από'), { target: { value: '10' } });
+    fireEvent.change(screen.getByLabelText('Περίμετρος έως'), { target: { value: '12' } });
     // Supplier + cost ride along as the desktop's third/fourth call.
     fireEvent.click(screen.getByRole('button', { name: 'Vivai Italia' }));
     expect(screen.getByText('Τιμή αγοράς')).toBeTruthy();
@@ -82,7 +85,7 @@ describe('AddProductPage — subproduct', () => {
     expect(createVariant).toHaveBeenCalledTimes(1);
     const call = createVariant.mock.calls[0][0];
     expect(call.plantId).toBe('p-olea');
-    expect(call.variant).toMatchObject({ variant_code: 'OLEA-EUROPAEA__TREE__OTHER__P50L__H150-175', plant_type: 'TREE', form: 'OTHER' });
+    expect(call.variant).toMatchObject({ variant_code: 'OLEA-EUROPAEA__TREE__OTHER__P50L__H150-175__G10-12', plant_type: 'TREE', form: 'OTHER', girth_min_cm: 10, girth_max_cm: 12 });
     expect(call.supplier('v-new')).toMatchObject({ product: { supplier_id: 's-ita', variant_id: 'v-new' }, price: null });
   });
 });
