@@ -336,6 +336,15 @@ export default function AddProductPage({ mode = 'product' }: { mode?: AddProduct
                         <NumberBox label="Ύψος έως" value={form.heightMaxCm} onChange={(n) => set('heightMaxCm', n)} placeholder="έως" />
                       </div>
                     </Field>
+                    {/* Girth (G) sits with pot and height — trees are sized by it,
+                        and the desktop shows it in the same block. */}
+                    <Field label="Περίμετρος κορμού (cm)" hint="προαιρετικό · G">
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <NumberBox label="Περίμετρος από" value={form.girthMinCm} onChange={(n) => set('girthMinCm', n)} placeholder="από" />
+                        <span style={{ color: 'var(--ink-300)' }}>–</span>
+                        <NumberBox label="Περίμετρος έως" value={form.girthMaxCm} onChange={(n) => set('girthMaxCm', n)} placeholder="έως" />
+                      </div>
+                    </Field>
                   </>
                 ) : (
                   <Field label="Χαρακτηριστικά" hint="προαιρετικό">
@@ -384,7 +393,7 @@ export default function AddProductPage({ mode = 'product' }: { mode?: AddProduct
 
                 {!more && (
                   <button type="button" onClick={() => setMore(true)} style={{ fontSize: 14, color: 'var(--sage-700)', fontWeight: 500, background: 'transparent', padding: '4px 0' }}>
-                    {isPlant ? 'Περισσότερα (τύπος, μορφή, τεμάχια, περίμετρος, ποιότητα, σημείωση)' : 'Περισσότερα (σημείωση)'}
+                    {isPlant ? 'Περισσότερα (τύπος, μορφή, τεμάχια, ποιότητα, σημείωση)' : 'Περισσότερα (σημείωση)'}
                   </button>
                 )}
                 {more && (
@@ -413,13 +422,6 @@ export default function AddProductPage({ mode = 'product' }: { mode?: AddProduct
                             <TextBox label="Ποιότητα" value={form.grade} onChange={(v) => set('grade', v)} placeholder="π.χ. A" />
                           </Field>
                         </div>
-                        <Field label="Περίμετρος κορμού (cm)" hint="προαιρετικό">
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                            <NumberBox label="Περίμετρος από" value={form.girthMinCm} onChange={(n) => set('girthMinCm', n)} placeholder="από" />
-                            <span style={{ color: 'var(--ink-300)' }}>–</span>
-                            <NumberBox label="Περίμετρος έως" value={form.girthMaxCm} onChange={(n) => set('girthMaxCm', n)} placeholder="έως" />
-                          </div>
-                        </Field>
                       </>
                     )}
                     <CustomerFormField label="Σημείωση μεγέθους" value={form.variantNote} onChange={(v) => set('variantNote', v)} placeholder="π.χ. χωρίς γλάστρα" />
