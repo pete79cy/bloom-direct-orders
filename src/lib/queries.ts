@@ -439,22 +439,49 @@ export interface CreateProductResponse {
 }
 
 /** Desktop's optional third and fourth calls: link the variant to a supplier,
- *  then record its cost. Best-effort, as on desktop — the variant exists
- *  already; the caller tells the user when this part failed. */
+ *  then record its cost. The server returns (or revives) an existing
+ *  supplier↔variant link instead of adding a second one; supplier_prices is
+ *  append-only, so a retry first checks whether the earlier attempt already
+ *  recorded this cost (its response may have been lost) — as the desktop
+ *  Edit Variant dialog does, an equal latest price is not re-added. */
+async function postSupplierLink(link: SupplierLinkBodies, { retry = false } = {}): Promise<void> {
+  const sp = await apiFetch<SupplierProduct>('/api/supplier-products', { method: 'POST', body: JSON.stringify(link.product) });
+  if (link.price && retry) {
+    const prices = await apiFetch<SupplierPrice[]>('/api/supplier-prices');
+    // Rows come sorted by captured_at DESC within each supplier product.
+    const latest = prices.find((p) => p.supplier_product_id === sp.id);
+    if (latest && Math.abs(Number(latest.cost_price) - link.price.cost_price) < 0.0001) return;
+  }
+  if (link.price) {
+    await apiFetch('/api/supplier-prices', {
+      method: 'POST',
+      body: JSON.stringify({ ...link.price, supplier_product_id: sp.id }),
+    });
+  }
+}
+
+/** Best-effort, as on desktop — the variant exists already; the caller tells
+ *  the user when this part failed and offers useLinkSupplier() to retry. */
 async function linkSupplier(link: SupplierLinkBodies | null): Promise<boolean> {
   if (!link) return true;
   try {
-    const sp = await apiFetch<SupplierProduct>('/api/supplier-products', { method: 'POST', body: JSON.stringify(link.product) });
-    if (link.price) {
-      await apiFetch('/api/supplier-prices', {
-        method: 'POST',
-        body: JSON.stringify({ ...link.price, supplier_product_id: sp.id }),
-      });
-    }
+    await postSupplierLink(link);
     return true;
   } catch {
     return false;
   }
+}
+
+/** Retry of the supplier link + cost after a create left them out. */
+export function useLinkSupplier() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (link: SupplierLinkBodies) => postSupplierLink(link, { retry: true }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['supplier-products'] });
+      void qc.invalidateQueries({ queryKey: ['supplier-prices'] });
+    },
+  });
 }
 
 function invalidateCatalogue(qc: ReturnType<typeof useQueryClient>, plant: Plant | null, variant: Variant) {

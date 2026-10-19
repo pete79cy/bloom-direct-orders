@@ -1,12 +1,12 @@
 import { useMemo, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
-import { ArrowLeft, Check, FileText, Loader2, Plus, Search, ShoppingCart, Sparkles, X } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, Check, FileText, Loader2, Plus, Search, ShoppingCart, Sparkles, X } from 'lucide-react';
 import CustomerFormField from '@/components/CustomerFormField';
 import PriceInput from '@/components/PriceInput';
 import VatPicker from '@/components/VatPicker';
 import {
-  lookupBotanicalName, useCreateProduct, useCreateVariant, usePlants, useSuppliers, useVariants,
+  lookupBotanicalName, useCreateProduct, useCreateVariant, useLinkSupplier, usePlants, useSuppliers, useVariants,
 } from '@/lib/queries';
 import {
   COMMON_POT_SIZES_L, EMPTY_PRODUCT_FORM, PLANT_FORM_LABEL, PLANT_TYPE_LABEL, PRODUCT_KIND_LABEL, botanicalCandidates,
@@ -38,6 +38,7 @@ export default function AddProductPage({ mode = 'product' }: { mode?: AddProduct
   const navigate = useNavigate();
   const createProduct = useCreateProduct();
   const createVariant = useCreateVariant();
+  const linkSupplier = useLinkSupplier();
   const sub = mode === 'subproduct';
   const { data: plants = [] } = usePlants();
   const { data: variants = [] } = useVariants();
@@ -49,6 +50,9 @@ export default function AddProductPage({ mode = 'product' }: { mode?: AddProduct
   const [lookupBusy, setLookupBusy] = useState(false);
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [created, setCreated] = useState<{ variantId: string; name: string; botanical: string | null } | null>(null);
+  // The variant saved but its supplier link / cost did not — the card stays
+  // in a warning state with a retry until they are written.
+  const [supplierPending, setSupplierPending] = useState(false);
 
   const set = <K extends keyof NewProductForm>(k: K, v: NewProductForm[K]) => setForm((f) => ({ ...f, [k]: v }));
   const setAttr = <K extends keyof NewProductForm['attributes']>(k: K, v: NewProductForm['attributes'][K]) =>
@@ -116,7 +120,6 @@ export default function AddProductPage({ mode = 'product' }: { mode?: AddProduct
         supplierLinked = res.supplierLinked;
         const n = pickPlantName(parent);
         setCreated({ variantId: res.variant.id, name: n.primary, botanical: n.secondary });
-        toast.success('Το μέγεθος προστέθηκε στο προϊόν');
       } else {
         const plantBody = buildPlantBody(form);
         const res = await createProduct.mutateAsync({
@@ -126,11 +129,28 @@ export default function AddProductPage({ mode = 'product' }: { mode?: AddProduct
         });
         supplierLinked = res.supplierLinked;
         setCreated({ variantId: res.variant.id, name: form.commonName.trim(), botanical: form.scientificName.trim() || null });
-        toast.success('Το προϊόν προστέθηκε στον κατάλογο');
       }
-      if (!supplierLinked) toast.error('Αποθηκεύτηκε, αλλά ο προμηθευτής / η τιμή αγοράς δεν καταχωρίστηκαν. Συμπληρώστε τα από το Bloom.');
+      setSupplierPending(!supplierLinked);
+      if (!supplierLinked) toast.error('Αποθηκεύτηκε, αλλά ο προμηθευτής / η τιμή αγοράς δεν καταχωρίστηκαν. Πατήστε «Ξαναδοκίμασε».');
+      else toast.success(sub ? 'Το μέγεθος προστέθηκε στο προϊόν' : 'Το προϊόν προστέθηκε στον κατάλογο');
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Αποτυχία δημιουργίας');
+    }
+  }
+
+  async function retrySupplierLink() {
+    if (!created) return;
+    const link = buildSupplierLink(form, created.variantId, sub && parent ? parent : buildPlantBody(form));
+    if (!link) {
+      setSupplierPending(false);
+      return;
+    }
+    try {
+      await linkSupplier.mutateAsync(link);
+      setSupplierPending(false);
+      toast.success('Ο προμηθευτής και η τιμή αγοράς καταχωρίστηκαν');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Η καταχώρηση προμηθευτή απέτυχε');
     }
   }
 
@@ -146,6 +166,7 @@ export default function AddProductPage({ mode = 'product' }: { mode?: AddProduct
   function reset(keepParent: boolean) {
     setSuggestions([]);
     setCreated(null);
+    setSupplierPending(false);
     if (keepParent) chooseParent(parent);
     else { setParent(null); setForm(EMPTY_PRODUCT_FORM); }
   }
@@ -183,11 +204,12 @@ export default function AddProductPage({ mode = 'product' }: { mode?: AddProduct
               aria-hidden="true"
               style={{
                 width: 44, height: 44, borderRadius: 999, flexShrink: 0,
-                background: 'var(--sage-100, #E6EEE2)', color: 'var(--sage-800)',
+                background: supplierPending ? 'rgba(198,142,59,0.12)' : 'var(--sage-100, #E6EEE2)',
+                color: supplierPending ? '#7a5621' : 'var(--sage-800)',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
               }}
             >
-              <Check size={22} strokeWidth={2.4} />
+              {supplierPending ? <AlertTriangle size={20} strokeWidth={2} /> : <Check size={22} strokeWidth={2.4} />}
             </div>
             <div style={{ minWidth: 0 }}>
               <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--ink-900)' }}>{created.name}</div>
@@ -204,6 +226,32 @@ export default function AddProductPage({ mode = 'product' }: { mode?: AddProduct
               )}
             </div>
           </div>
+
+          {supplierPending && supplier && (
+            <div
+              role="alert"
+              style={{
+                display: 'flex', flexDirection: 'column', gap: 10, padding: '12px 14px', borderRadius: 12,
+                fontSize: 13, lineHeight: 1.45, background: 'rgba(198,142,59,0.12)', color: '#7a5621',
+              }}
+            >
+              <div>
+                <strong>Ο προμηθευτής και η τιμή αγοράς δεν καταχωρίστηκαν.</strong>{' '}
+                Το προϊόν αποθηκεύτηκε χωρίς {supplier.trading_name || supplier.name}
+                {form.supplierCost != null ? ` (${fmtEUR(form.supplierCost)})` : ''}, οπότε οι προσφορές δεν θα βρίσκουν τον προμηθευτή του.
+              </div>
+              <button
+                type="button"
+                onClick={retrySupplierLink}
+                disabled={linkSupplier.isPending}
+                className="btn-secondary ios-tap"
+                style={{ height: 44 }}
+              >
+                {linkSupplier.isPending ? <Loader2 size={16} className="animate-spin" /> : null}
+                Ξαναδοκίμασε προμηθευτή / τιμή
+              </button>
+            </div>
+          )}
 
           <p style={{ fontSize: 13, color: 'var(--ink-500)', lineHeight: 1.45, margin: 0 }}>
             Είναι ήδη διαθέσιμο στην αναζήτηση φυτών. Η τιμή που δώσατε θα προταθεί στην πρώτη γραμμή που θα το χρησιμοποιήσει.

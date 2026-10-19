@@ -4,7 +4,9 @@ import { MemoryRouter } from 'react-router-dom';
 
 const mutateAsync = vi.fn();
 const createVariant = vi.fn();
+const linkSupplier = vi.fn();
 vi.mock('@/lib/queries', () => ({
+  useLinkSupplier: () => ({ mutateAsync: linkSupplier, isPending: false }),
   useCreateProduct: () => ({ mutateAsync, isPending: false }),
   useCreateVariant: () => ({ mutateAsync: createVariant, isPending: false }),
   usePlants: () => ({ data: [{ id: 'p-olea', scientific_name: 'Olea europaea', common_name: 'Ελιά', product_kind: 'plant' }] }),
@@ -87,5 +89,33 @@ describe('AddProductPage — subproduct', () => {
     expect(call.plantId).toBe('p-olea');
     expect(call.variant).toMatchObject({ variant_code: 'OLEA-EUROPAEA__TREE__OTHER__P50L__H150-175__G10-12', plant_type: 'TREE', form: 'OTHER', girth_min_cm: 10, girth_max_cm: 12 });
     expect(call.supplier('v-new')).toMatchObject({ product: { supplier_id: 's-ita', variant_id: 'v-new' }, price: null });
+  });
+});
+
+describe('AddProductPage — supplier link failed', () => {
+  it('warns instead of a plain success and retries the supplier link + cost', async () => {
+    createVariant.mockResolvedValue({ variant: { id: 'v-new' }, supplierLinked: false });
+    linkSupplier.mockRejectedValueOnce(new Error('Failed to create supplier product')).mockResolvedValueOnce(undefined);
+    render(<MemoryRouter><AddProductPage mode="subproduct" /></MemoryRouter>);
+
+    fireEvent.change(screen.getByLabelText('Αναζήτηση προϊόντος'), { target: { value: 'ελι' } });
+    fireEvent.click(screen.getByText('Ελιά'));
+    fireEvent.click(screen.getByRole('button', { name: '50L' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Vivai Italia' }));
+    fireEvent.click(screen.getByRole('button', { name: /Αποθήκευση μεγέθους/ }));
+
+    const retry = await screen.findByRole('button', { name: /Ξαναδοκίμασε προμηθευτή/ });
+    expect(screen.getByRole('alert').textContent).toContain('δεν καταχωρίστηκαν');
+
+    // First retry fails → the warning stays.
+    fireEvent.click(retry);
+    await waitFor(() => expect(linkSupplier).toHaveBeenCalledTimes(1));
+    expect(linkSupplier.mock.calls[0][0]).toMatchObject({ product: { supplier_id: 's-ita', variant_id: 'v-new' } });
+    expect(screen.getByRole('alert')).toBeTruthy();
+
+    // Second retry succeeds → the warning goes away.
+    fireEvent.click(screen.getByRole('button', { name: /Ξαναδοκίμασε προμηθευτή/ }));
+    await waitFor(() => expect(screen.queryByRole('alert')).toBeNull());
+    expect(linkSupplier).toHaveBeenCalledTimes(2);
   });
 });
